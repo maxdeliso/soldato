@@ -1,0 +1,162 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - platform: x64
+            configuration: Release
+            arch: x64
+            triplet: x64-windows
+            runner: windows-latest
+          - platform: arm64
+            configuration: Release
+            arch: ARM64
+            triplet: arm64-windows
+            runner: windows-latest
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Update version with GitHub Actions build number
+      id: version
+      run: |
+        .\scripts\update-version-github.ps1
+        echo "version=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+        echo "display_version=$(git describe --tags --abbrev=0 2>$null | sed 's/^v//' || echo '1.0.0')" >> $env:GITHUB_OUTPUT
+        echo "build_number=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Setup Vcpkg
+      id: vcpkg
+      uses: johnwason/vcpkg-action@v7
+      with:
+        triplet: ${{ matrix.triplet }}
+        manifest-dir: ${{ github.workspace }}
+        token: ${{ github.token }}
+
+    - name: Integrate Vcpkg with MSBuild
+      run: |
+        $vcpkgExe = "${{ github.workspace }}\vcpkg\vcpkg.exe"
+        Write-Host "Running vcpkg integrate install from: $vcpkgExe"
+        & $vcpkgExe integrate install
+      shell: pwsh
+
+
+    - name: Build ${{ matrix.platform }}
+      run: |
+        msbuild Soldato.sln `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=${{ matrix.arch }} `
+          /m `
+          /v:minimal
+
+    - name: Create release directory
+      run: |
+        mkdir release-${{ matrix.platform }}
+
+        # Find the executable in various possible locations
+        $possiblePaths = @(
+          "${{ matrix.configuration }}/Soldato.exe",
+          "Soldato/${{ matrix.configuration }}/Soldato.exe",
+          "${{ matrix.arch }}/${{ matrix.configuration }}/Soldato.exe",
+          "Soldato/${{ matrix.arch }}/${{ matrix.configuration }}/Soldato.exe"
+        )
+
+        $exePath = $null
+        foreach ($path in $possiblePaths) {
+          Write-Host "Checking: $path"
+          if (Test-Path $path) {
+            $exePath = $path
+            Write-Host "✓ Found executable at: $exePath"
+            break
+          }
+        }
+
+        if ($exePath) {
+          copy $exePath "release-${{ matrix.platform }}\Soldato.exe"
+        } else {
+          Write-Host "✗ Build failed: Soldato.exe not found in any expected location"
+          Write-Host "Listing directory contents:"
+          Get-ChildItem -Recurse -Name "*.exe" | ForEach-Object { Write-Host "  $_" }
+          exit 1
+        }
+
+      shell: pwsh
+
+    - name: Create ZIP archive
+      run: |
+        powershell Compress-Archive -Path "release-${{ matrix.platform }}\*" -DestinationPath "Soldato-${{ steps.version.outputs.display_version }}-${{ matrix.platform }}.zip"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Soldato-${{ matrix.platform }}
+        path: Soldato-${{ steps.version.outputs.display_version }}-${{ matrix.platform }}.zip
+        retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get tag name
+      id: tag
+      run: |
+        echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        echo "display_version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.tag.outputs.tag_name }}
+        name: Release ${{ steps.tag.outputs.display_version }}
+        body: |
+          ## Soldato ${{ steps.tag.outputs.display_version }}
+
+          Multi-architecture release with optimized builds for:
+          - **x64** (64-bit Windows)
+          - **ARM64** (ARM64 Windows)
+
+          ### Installation
+          1. Download the appropriate ZIP file for your architecture
+          2. Extract the ZIP file
+          3. Run `Soldato.exe`
+
+          ### System Requirements
+          - Windows 10 or later
+          - No additional dependencies required
+
+          ### Changes
+          See the [changelog](https://github.com/${{ github.repository }}/compare/${{ steps.tag.outputs.display_version }}^...${{ steps.tag.outputs.display_version }}) for detailed changes.
+        files: |
+          artifacts/Soldato-x64/Soldato-${{ steps.tag.outputs.display_version }}-x64.zip
+          artifacts/Soldato-arm64/Soldato-${{ steps.tag.outputs.display_version }}-arm64.zip
+        draft: false
+        prerelease: false
