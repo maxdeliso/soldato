@@ -2,9 +2,13 @@
 
 #include <windows.h>
 #include <string>
+#include <functional>
 
 class ConnectDialog
 {
+public:
+    using ConnectSuccessCallback = std::function<void()>;
+
 private:
     HWND m_hWnd;
     HWND m_hParent;
@@ -13,19 +17,21 @@ private:
     HWND m_hUsername;
     HWND m_hConnectButton;
     HWND m_hCancelButton;
+    ConnectSuccessCallback m_on_success;
 
     static LRESULT CALLBACK DialogProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
     void InitializeControls();
     void OnConnect();
+    void CenterWindow() const;
 
 public:
-    ConnectDialog(HWND parent);
+    ConnectDialog(HWND parent, ConnectSuccessCallback on_success = nullptr);
     ~ConnectDialog();
 
-    bool Show();
-    void Hide();
+    bool Show() const;
+    void Hide() const;
 
     std::string GetMulticastIP() const;
     int GetPort() const;

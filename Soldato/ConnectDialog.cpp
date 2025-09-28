@@ -2,6 +2,7 @@
 #include "ConnectDialog.h"
 #include "Resource.h"
 #include "NetworkManager.h"
+#include "StringUtils.h"
 #include <sstream>
 
 // Control IDs
@@ -11,7 +12,8 @@
 #define ID_CONNECT_BTN     2004
 #define ID_CANCEL_BTN      2005
 
-ConnectDialog::ConnectDialog(HWND parent) : m_hParent(parent), m_hWnd(nullptr)
+ConnectDialog::ConnectDialog(HWND parent, ConnectSuccessCallback on_success)
+    : m_hParent(parent), m_hWnd(nullptr), m_on_success(on_success)
 {
     // Create the dialog window
     m_hWnd = CreateDialogParam(
@@ -97,8 +99,8 @@ void ConnectDialog::InitializeControls()
     m_hCancelButton = GetDlgItem(m_hWnd, ID_CANCEL_BTN);
 
     // Set default values
-    SetWindowTextW(m_hMulticastIP, L"224.0.0.1");
-    SetWindowTextW(m_hPort, L"12345");
+    SetWindowTextW(m_hMulticastIP, L"224.0.0.122");
+    SetWindowTextW(m_hPort, L"1337");
     SetWindowTextW(m_hUsername, L"User");
 
     // Set focus to username field
@@ -128,9 +130,9 @@ void ConnectDialog::OnConnect()
     std::wstring wPort(port);
     std::wstring wUsername(username);
 
-    // Convert to narrow strings
-    std::string multicastIPStr(wMulticastIP.begin(), wMulticastIP.end());
-    std::string usernameStr(wUsername.begin(), wUsername.end());
+    // Convert to narrow strings using proper UTF-8 conversion
+    std::string multicastIPStr = StringUtils::to_string(wMulticastIP);
+    std::string usernameStr = StringUtils::to_string(wUsername);
 
     // Convert port to integer
     int portNum = _wtoi(port);
@@ -141,29 +143,30 @@ void ConnectDialog::OnConnect()
     }
 
     // Call the network manager to connect
-    NetworkManager* networkManager = NetworkManager::GetInstance();
-    if (networkManager)
+    NetworkManager& networkManager = NetworkManager::GetInstance();
     {
-        bool success = networkManager->Connect(multicastIPStr, portNum, usernameStr);
+        bool success = networkManager.Connect(multicastIPStr, portNum, usernameStr);
         if (success)
         {
             Hide();
+            // Call the success callback if provided
+            if (m_on_success)
+            {
+                m_on_success();
+            }
         }
         else
         {
             MessageBoxW(m_hWnd, L"Failed to connect to network. Please check your settings.", L"Connection Error", MB_OK | MB_ICONERROR);
         }
     }
-    else
-    {
-        MessageBoxW(m_hWnd, L"Network manager not available.", L"Error", MB_OK | MB_ICONERROR);
-    }
 }
 
-bool ConnectDialog::Show()
+bool ConnectDialog::Show() const
 {
     if (m_hWnd)
     {
+        CenterWindow();
         ShowWindow(m_hWnd, SW_SHOW);
         SetForegroundWindow(m_hWnd);
         return true;
@@ -171,7 +174,36 @@ bool ConnectDialog::Show()
     return false;
 }
 
-void ConnectDialog::Hide()
+void ConnectDialog::CenterWindow() const
+{
+    if (!m_hWnd || !m_hParent)
+        return;
+
+    RECT dialogRect, parentRect;
+    GetWindowRect(m_hWnd, &dialogRect);
+    GetWindowRect(m_hParent, &parentRect);
+
+    int dialogWidth = dialogRect.right - dialogRect.left;
+    int dialogHeight = dialogRect.bottom - dialogRect.top;
+    int parentWidth = parentRect.right - parentRect.left;
+    int parentHeight = parentRect.bottom - parentRect.top;
+
+    int x = parentRect.left + (parentWidth - dialogWidth) / 2;
+    int y = parentRect.top + (parentHeight - dialogHeight) / 2;
+
+    // Ensure the dialog stays on screen
+    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x + dialogWidth > screenWidth) x = screenWidth - dialogWidth;
+    if (y + dialogHeight > screenHeight) y = screenHeight - dialogHeight;
+
+    SetWindowPos(m_hWnd, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+}
+
+void ConnectDialog::Hide() const
 {
     if (m_hWnd)
     {
@@ -184,7 +216,7 @@ std::string ConnectDialog::GetMulticastIP() const
     wchar_t buffer[256];
     GetWindowTextW(m_hMulticastIP, buffer, 256);
     std::wstring wstr(buffer);
-    return std::string(wstr.begin(), wstr.end());
+    return StringUtils::to_string(wstr);
 }
 
 int ConnectDialog::GetPort() const
@@ -199,5 +231,5 @@ std::string ConnectDialog::GetUsername() const
     wchar_t buffer[256];
     GetWindowTextW(m_hUsername, buffer, 256);
     std::wstring wstr(buffer);
-    return std::string(wstr.begin(), wstr.end());
+    return StringUtils::to_string(wstr);
 }

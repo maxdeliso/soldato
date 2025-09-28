@@ -1,0 +1,127 @@
+#pragma once
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <string>
+#include <vector>
+#include <memory>
+#include <mutex>
+#include <atomic>
+#include <queue>
+#include <thread>
+#include <condition_variable>
+#include <functional>
+#include "json.hpp"
+#include "Message.h"
+#include "MessageTracker.h"
+#include "PeerTracker.h"
+#include "WinsockManager.h"
+
+#pragma comment(lib, "ws2_32.lib")
+
+class NetworkManager
+{
+private:
+    static WinsockManager s_winsockManager;
+
+    SOCKET m_socket;
+    sockaddr_in m_multicastAddr;
+    std::string m_multicastIP;
+    int m_port;
+    std::atomic<bool> m_connected;
+    std::string m_username;
+    std::string m_senderId;  // UUID for Teflon compatibility
+    std::unique_ptr<MessageTracker> m_messageTracker;  // Message tracking for ACK/NACK
+    std::unique_ptr<PeerTracker> m_peerTracker;        // Peer tracking for known peers
+
+    // Thread safety for member variables
+    mutable std::mutex m_memberMutex;
+
+    // Windows event objects
+    HANDLE m_socketEvent;
+    HANDLE m_shutdownEvent;
+    std::thread m_eventThread;
+    std::atomic<bool> m_threadRunning;
+
+    // UI notification window handle
+    HWND m_hNotifyWnd;
+
+    // Synchronization for callbacks
+    mutable std::mutex m_callbackMutex;
+
+    // Message sending queue and worker thread
+    std::queue<std::string> m_sendQueue;
+    std::mutex m_sendQueueMutex;
+    std::condition_variable m_sendQueueCondition;
+    std::thread m_sendWorkerThread;
+    std::atomic<bool> m_sendWorkerRunning;
+
+    NetworkManager();
+    ~NetworkManager();
+
+    bool SetupSocketEvents();
+    void CleanupSocketEvents();
+
+public:
+    static NetworkManager& GetInstance();
+
+    bool Connect(const std::string& multicastIP, int port, const std::string& username);
+    void Disconnect();
+    bool SendMessage(const std::string& message);
+    void SendMessageAsync(const std::string& message);
+    bool IsConnected() const { return m_connected.load(); }
+
+    // Teflon-compatible message helpers
+    std::string SerializeMessage(const Message& message);
+    bool DeserializeMessage(const std::string& jsonData, Message& message);
+    Message CreateChatMessage(const std::string& sender, const std::string& content);
+    Message CreateAcknowledgment(const std::string& sender, const std::string& originalMessageId, bool isPositive);
+
+    // Message tracking and ACK/NACK functionality
+    void SendAcknowledgment(const std::string& originalMessageId, bool isPositive);
+    void ProcessIncomingMessage(const Message& message);
+    std::unordered_map<std::string, long long> GetDeliveryStats() const;
+
+    // Peer tracking functionality
+    std::unordered_map<std::string, PeerInfo> GetKnownPeers() const;
+    int GetPeerCount() const;
+
+    std::string GetUsername() const {
+        std::lock_guard<std::mutex> lock(m_memberMutex);
+        return m_username;
+    }
+    std::string GetSenderId() const {
+        std::lock_guard<std::mutex> lock(m_memberMutex);
+        return m_senderId;
+    }
+    std::string GetMulticastIP() const {
+        std::lock_guard<std::mutex> lock(m_memberMutex);
+        return m_multicastIP;
+    }
+    int GetPort() const {
+        std::lock_guard<std::mutex> lock(m_memberMutex);
+        return m_port;
+    }
+
+    // Callback for received messages - using std::function for safer callback management
+    typedef std::function<void(const std::string& sender, const std::string& message)> MessageCallback;
+    void SetMessageCallback(MessageCallback callback);
+    void ClearMessageCallback();
+
+    // Windows event callbacks - using std::function for safer callback management
+    typedef std::function<void(int eventType, const std::string& data)> SocketEventCallback;
+    void SetSocketEventCallback(SocketEventCallback callback);
+    void ClearSocketEventCallback();
+
+    // UI notification methods
+    void SetNotificationWindow(HWND hWnd);
+
+private:
+    MessageCallback m_messageCallback;
+    SocketEventCallback m_socketEventCallback;
+
+    void EventThreadFunction();
+    void HandleSocketEvent(WSAEVENT event);
+    void ProcessSocketData();
+    void SendWorkerThreadFunction();
+};
