@@ -33,7 +33,7 @@ ConnectDialog::~ConnectDialog()
     }
 }
 
-LRESULT CALLBACK ConnectDialog::DialogProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK ConnectDialog::DialogProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     ConnectDialog* pThis = nullptr;
 
@@ -52,7 +52,8 @@ LRESULT CALLBACK ConnectDialog::DialogProc(HWND hWnd, UINT message, WPARAM wPara
 
     if (pThis)
     {
-        return pThis->HandleMessage(message, wParam, lParam);
+        pThis->HandleMessage(message, wParam, lParam);
+        return TRUE;
     }
 
     return FALSE;

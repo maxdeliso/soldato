@@ -1,0 +1,173 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ '**' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  SOLUTION_FILE: Soldato.sln
+  PROJECT_FILE: Soldato/Soldato.vcxproj
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        include:
+          - configuration: Debug
+            platform: x64
+          - configuration: Release
+            platform: x64
+          - configuration: Debug
+            platform: x86
+          - configuration: Release
+            platform: x86
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Setup Windows SDK
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Display build environment
+      run: |
+        echo "Visual Studio version:"
+        & "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && where cl
+        echo "MSBuild version:"
+        msbuild /version
+        echo "Windows SDK version:"
+        reg query "HKLM\SOFTWARE\WOW6432Node\Microsoft\Microsoft SDKs\Windows\v10.0" /v ProductVersion
+
+    - name: Restore NuGet packages
+      run: nuget restore $env:SOLUTION_FILE
+      continue-on-error: true
+
+    - name: Build solution
+      run: |
+        msbuild $env:SOLUTION_FILE `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=${{ matrix.platform }} `
+          /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=10.0 `
+          /p:UseMultiToolTask=true `
+          /p:EnforceProcessCountAcrossBuilds=true `
+          /m `
+          /verbosity:minimal `
+          "/flp:logfile=build-${{ matrix.configuration }}-${{ matrix.platform }}.log;verbosity=detailed"
+        if ($LASTEXITCODE -ne 0) {
+          echo "Build failed with exit code $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
+
+    - name: Verify executable
+      run: |
+        echo "Looking for executable in various possible locations..."
+
+        # Check multiple possible output paths
+        $possiblePaths = @(
+          "${{ matrix.configuration }}/Soldato.exe",
+          "Soldato/${{ matrix.configuration }}/Soldato.exe",
+          "${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe",
+          "Soldato/${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe",
+          "x64/${{ matrix.configuration }}/Soldato.exe",
+          "x86/${{ matrix.configuration }}/Soldato.exe",
+          "Win32/${{ matrix.configuration }}/Soldato.exe"
+        )
+
+        $exePath = $null
+        foreach ($path in $possiblePaths) {
+          echo "Checking: $path"
+          if (Test-Path $path) {
+            $exePath = $path
+            echo "✓ Found executable at: $exePath"
+            break
+          }
+        }
+
+        if ($exePath) {
+          $fileInfo = Get-Item $exePath
+          echo "File size: $($fileInfo.Length) bytes"
+          echo "Last modified: $($fileInfo.LastWriteTime)"
+
+          # Basic executable validation
+          try {
+            $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath)
+            echo "Product name: $($versionInfo.ProductName)"
+            echo "File version: $($versionInfo.FileVersion)"
+          } catch {
+            echo "Could not read version info (this is normal for debug builds)"
+          }
+        } else {
+          echo "✗ Build failed: Soldato.exe not found in any expected location"
+          echo "Listing directory contents:"
+          Get-ChildItem -Recurse -Name "*.exe" | ForEach-Object { echo "  $_" }
+          exit 1
+        }
+
+    - name: Upload build logs
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: build-logs-${{ matrix.configuration }}-${{ matrix.platform }}
+        path: build-*.log
+        retention-days: 7
+
+    - name: Upload executable (main branch only)
+      uses: actions/upload-artifact@v4
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      with:
+        name: Soldato-${{ matrix.configuration }}-${{ matrix.platform }}
+        path: |
+          ${{ matrix.configuration }}/Soldato.exe
+          ${{ matrix.configuration }}/Soldato.pdb
+          Soldato/${{ matrix.configuration }}/Soldato.exe
+          Soldato/${{ matrix.configuration }}/Soldato.pdb
+          ${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe
+          ${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.pdb
+        retention-days: 30
+        if-no-files-found: warn
+
+  # Optional: Add a job for static analysis
+  static-analysis:
+    runs-on: windows-latest
+    needs: build
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Run static analysis
+      run: |
+        # Enable additional warnings and static analysis
+        msbuild $env:PROJECT_FILE `
+          /p:Configuration=Release `
+          /p:Platform=x64 `
+          /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=10.0 `
+          /p:RunCodeAnalysis=true `
+          /p:CodeAnalysisRuleSet=MinimumRecommendedRules.ruleset `
+          /p:EnablePREfast=true `
+          /verbosity:minimal
+      continue-on-error: true
+
+    - name: Upload analysis results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: static-analysis-results
+        path: |
+          **/*.sarif
+          **/CodeAnalysisLog.xml
+        retention-days: 7
