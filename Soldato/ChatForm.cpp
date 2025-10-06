@@ -40,8 +40,11 @@ LRESULT CALLBACK MessageInputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
     return CallWindowProc(originalProc, hWnd, message, wParam, lParam);
 }
 
-ChatForm::ChatForm(HWND parent) : m_hParent(parent), m_hWnd(nullptr), m_networkManager(nullptr), m_connectDialog(nullptr), m_peerPanel(nullptr), m_hFont(nullptr)
+ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd(nullptr), m_networkManager(nullptr), m_connectDialog(nullptr), m_peerPanel(nullptr), m_hFont(nullptr), m_hInstance(hInstance)
 {
+    // Resolve the proper module handle
+    m_hInstance = ResolveModuleHandle(m_hInstance);
+
     // Register the chat form window class
     WNDCLASSEXW wcex = {};
     wcex.cbSize = sizeof(WNDCLASSEX);
@@ -49,13 +52,13 @@ ChatForm::ChatForm(HWND parent) : m_hParent(parent), m_hWnd(nullptr), m_networkM
     wcex.lpfnWndProc = ChatFormProc;
     wcex.cbClsExtra = 0;
     wcex.cbWndExtra = sizeof(ChatForm*);
-    wcex.hInstance = GetModuleHandle(nullptr);
-    wcex.hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_SOLDATO));
+    wcex.hInstance = m_hInstance;
+    wcex.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SOLDATO));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground = CreateSolidBrush(RGB(0, 20, 0)); // Dark green-black background
     wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = L"ChatFormClass";
-    wcex.hIconSm = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_SMALL));
+    wcex.hIconSm = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
     RegisterClassExW(&wcex);
 
@@ -68,8 +71,8 @@ ChatForm::ChatForm(HWND parent) : m_hParent(parent), m_hWnd(nullptr), m_networkM
         CW_USEDEFAULT, CW_USEDEFAULT,
         500, 400,
         m_hParent,
-        LoadMenu(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDC_SOLDATO)),
-        GetModuleHandle(nullptr),
+        LoadMenu(m_hInstance, MAKEINTRESOURCE(IDC_SOLDATO)),
+        m_hInstance,
         this
     );
 
@@ -96,10 +99,10 @@ ChatForm::ChatForm(HWND parent) : m_hParent(parent), m_hWnd(nullptr), m_networkM
             // This code runs when the dialog reports success
             this->FocusMessageInput();
             this->UpdateConnectionUI();
-        });
+        }, m_hInstance);
 
         // Create peer panel
-        m_peerPanel = std::make_unique<PeerPanel>(m_hWnd);
+        m_peerPanel = std::make_unique<PeerPanel>(m_hWnd, m_hInstance);
 
         // Set initial layout for peer panel
         RECT clientRect;
@@ -378,7 +381,7 @@ void ChatForm::InitializeControls()
         10, 10, chatWidth - 20, height - 80,
         m_hWnd,
         (HMENU)ID_CHAT_HISTORY,
-        GetModuleHandle(nullptr),
+        m_hInstance,
         nullptr
     );
 
@@ -403,7 +406,7 @@ void ChatForm::InitializeControls()
         10, height - 60, chatWidth - 90, 25,
         m_hWnd,
         (HMENU)ID_MESSAGE_INPUT,
-        GetModuleHandle(nullptr),
+        m_hInstance,
         nullptr
     );
 
@@ -426,7 +429,7 @@ void ChatForm::InitializeControls()
         chatWidth - 80, height - 60, 70, 25,
         m_hWnd,
         (HMENU)ID_SEND_BUTTON,
-        GetModuleHandle(nullptr),
+        m_hInstance,
         nullptr
     );
 
@@ -578,7 +581,7 @@ void ChatForm::UpdatePeerDisplay()
 
 void ChatForm::OnAbout() const
 {
-    DialogBox(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDD_ABOUTBOX), m_hWnd, About);
+    DialogBox(m_hInstance, MAKEINTRESOURCE(IDD_ABOUTBOX), m_hWnd, About);
 }
 
 void ChatForm::OnConnect()
@@ -724,4 +727,19 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     }
 
     return (INT_PTR)FALSE;
+}
+
+// Helper function to resolve proper module handle
+HINSTANCE ChatForm::ResolveModuleHandle(HINSTANCE hInstance)
+{
+    // Get the proper module handle - use provided instance or fall back to main executable
+    HINSTANCE hModule = hInstance;
+    if (!hModule) {
+        // Try to get the main executable handle
+        hModule = GetModuleHandle(L"Soldato.exe");
+        if (!hModule) {
+            hModule = GetModuleHandle(nullptr); // Last resort fallback
+        }
+    }
+    return hModule;
 }

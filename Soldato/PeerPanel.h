@@ -20,6 +20,7 @@ private:
     HWND m_hPeerCountLabel;
     HWND m_hParent;
     HFONT m_hFont; // Member variable for the font
+    HINSTANCE m_hInstance;
 
     std::vector<std::wstring> m_peerEntries;
     std::unordered_map<std::string, PeerInfo> m_currentPeers;
@@ -40,7 +41,7 @@ private:
     std::wstring FormatTimestamp(const std::chrono::steady_clock::time_point& timestamp) const;
 
 public:
-    PeerPanel(HWND parent);
+    PeerPanel(HWND parent, HINSTANCE hInstance = nullptr);
     ~PeerPanel();
 
     bool Show() const;

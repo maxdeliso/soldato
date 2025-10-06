@@ -18,6 +18,7 @@ private:
     HWND m_hConnectButton;
     HWND m_hCancelButton;
     ConnectSuccessCallback m_on_success;
+    HINSTANCE m_hInstance;
 
     static INT_PTR CALLBACK DialogProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
@@ -27,7 +28,7 @@ private:
     void CenterWindow() const;
 
 public:
-    ConnectDialog(HWND parent, ConnectSuccessCallback on_success = nullptr);
+    ConnectDialog(HWND parent, ConnectSuccessCallback on_success = nullptr, HINSTANCE hInstance = nullptr);
     ~ConnectDialog();
 
     bool Show() const;

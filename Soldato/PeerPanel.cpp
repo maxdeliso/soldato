@@ -18,8 +18,8 @@
 #define ID_PEER_LIST    2001
 #define ID_PEER_COUNT   2002
 
-PeerPanel::PeerPanel(HWND parent)
-    : m_hParent(parent), m_hWnd(nullptr), m_hPeerList(nullptr), m_hPeerCountLabel(nullptr), m_hFont(nullptr) {
+PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
+    : m_hParent(parent), m_hWnd(nullptr), m_hPeerList(nullptr), m_hPeerCountLabel(nullptr), m_hFont(nullptr), m_hInstance(hInstance) {
 
     // Register the peer panel window class
     WNDCLASSEXW wcex = {};
@@ -28,13 +28,13 @@ PeerPanel::PeerPanel(HWND parent)
     wcex.lpfnWndProc = PeerPanelProc;
     wcex.cbClsExtra = 0;
     wcex.cbWndExtra = sizeof(PeerPanel*);
-    wcex.hInstance = GetModuleHandle(nullptr);
-    wcex.hIcon = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_SOLDATO));
+    wcex.hInstance = m_hInstance;
+    wcex.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SOLDATO));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground = CreateSolidBrush(RGB(0, 15, 0)); // Dark green background
     wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = L"PeerPanelClass";
-    wcex.hIconSm = LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_SMALL));
+    wcex.hIconSm = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
     RegisterClassExW(&wcex);
 
@@ -47,7 +47,7 @@ PeerPanel::PeerPanel(HWND parent)
         0, 0, 300, 400,
         m_hParent,
         nullptr,
-        GetModuleHandle(nullptr),
+        m_hInstance,
         this
     );
 
@@ -151,7 +151,7 @@ void PeerPanel::InitializeControls() {
         10, 10, 280, 25,
         m_hWnd,
         (HMENU)ID_PEER_COUNT,
-        GetModuleHandle(nullptr),
+        m_hInstance,
         nullptr
     );
 
@@ -172,7 +172,7 @@ void PeerPanel::InitializeControls() {
         10, 40, 280, 350,
         m_hWnd,
         (HMENU)ID_PEER_LIST,
-        GetModuleHandle(nullptr),
+        m_hInstance,
         nullptr
     );
 
