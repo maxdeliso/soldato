@@ -73,6 +73,8 @@ jobs:
 
         # Check multiple possible output paths
         $possiblePaths = @(
+          "${{ matrix.configuration }}/Soldato.exe",
+          "Soldato/${{ matrix.configuration }}/Soldato.exe",
           "${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe",
           "Soldato/${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe",
           "x64/${{ matrix.configuration }}/Soldato.exe",
@@ -124,10 +126,12 @@ jobs:
       with:
         name: Soldato-${{ matrix.configuration }}-${{ matrix.platform }}
         path: |
+          ${{ matrix.configuration }}/Soldato.exe
+          ${{ matrix.configuration }}/Soldato.pdb
+          Soldato/${{ matrix.configuration }}/Soldato.exe
+          Soldato/${{ matrix.configuration }}/Soldato.pdb
           ${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe
           ${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.pdb
-          Soldato/${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe
-          Soldato/${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.pdb
         retention-days: 30
         if-no-files-found: warn
 
