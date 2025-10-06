@@ -5,6 +5,7 @@ on:
     branches: [ '**' ]
   pull_request:
     branches: [ '**' ]
+  workflow_dispatch:
 
 env:
   SOLUTION_FILE: Soldato.sln
@@ -92,8 +93,9 @@ jobs:
         path: build-*.log
         retention-days: 7
 
-    - name: Upload executable
+    - name: Upload executable (main branch only)
       uses: actions/upload-artifact@v4
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       with:
         name: Soldato-${{ matrix.configuration }}-${{ matrix.platform }}
         path: |
