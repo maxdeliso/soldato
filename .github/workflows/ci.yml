@@ -2,9 +2,9 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main, develop, 'optimize-*' ]
+    branches: [ '**' ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ '**' ]
 
 env:
   SOLUTION_FILE: Soldato.sln
