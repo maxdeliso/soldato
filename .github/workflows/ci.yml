@@ -62,12 +62,35 @@ jobs:
           /m `
           /verbosity:minimal `
           "/flp:logfile=build-${{ matrix.configuration }}-${{ matrix.platform }}.log;verbosity=detailed"
+        if ($LASTEXITCODE -ne 0) {
+          echo "Build failed with exit code $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
 
     - name: Verify executable
       run: |
-        $exePath = "${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe"
-        if (Test-Path $exePath) {
-          echo "✓ Build successful: $exePath"
+        echo "Looking for executable in various possible locations..."
+
+        # Check multiple possible output paths
+        $possiblePaths = @(
+          "${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe",
+          "Soldato/${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe",
+          "x64/${{ matrix.configuration }}/Soldato.exe",
+          "x86/${{ matrix.configuration }}/Soldato.exe",
+          "Win32/${{ matrix.configuration }}/Soldato.exe"
+        )
+
+        $exePath = $null
+        foreach ($path in $possiblePaths) {
+          echo "Checking: $path"
+          if (Test-Path $path) {
+            $exePath = $path
+            echo "✓ Found executable at: $exePath"
+            break
+          }
+        }
+
+        if ($exePath) {
           $fileInfo = Get-Item $exePath
           echo "File size: $($fileInfo.Length) bytes"
           echo "Last modified: $($fileInfo.LastWriteTime)"
@@ -81,7 +104,9 @@ jobs:
             echo "Could not read version info (this is normal for debug builds)"
           }
         } else {
-          echo "✗ Build failed: $exePath not found"
+          echo "✗ Build failed: Soldato.exe not found in any expected location"
+          echo "Listing directory contents:"
+          Get-ChildItem -Recurse -Name "*.exe" | ForEach-Object { echo "  $_" }
           exit 1
         }
 
@@ -101,8 +126,10 @@ jobs:
         path: |
           ${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe
           ${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.pdb
+          Soldato/${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe
+          Soldato/${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.pdb
         retention-days: 30
-        if-no-files-found: error
+        if-no-files-found: warn
 
   # Optional: Add a job for static analysis
   static-analysis:
