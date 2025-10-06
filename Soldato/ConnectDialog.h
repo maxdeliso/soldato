@@ -19,7 +19,7 @@ private:
     HWND m_hCancelButton;
     ConnectSuccessCallback m_on_success;
 
-    static LRESULT CALLBACK DialogProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+    static INT_PTR CALLBACK DialogProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
     void InitializeControls();

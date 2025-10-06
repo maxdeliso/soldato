@@ -61,7 +61,7 @@ jobs:
           /p:EnforceProcessCountAcrossBuilds=true `
           /m `
           /verbosity:minimal `
-          /flp:logfile=build-${{ matrix.configuration }}-${{ matrix.platform }}.log;verbosity=detailed
+          "/flp:logfile=build-${{ matrix.configuration }}-${{ matrix.platform }}.log;verbosity=detailed"
 
     - name: Verify executable
       run: |
