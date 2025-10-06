@@ -34,6 +34,7 @@ private:
     HWND m_hMessageInput;
     HWND m_hSendButton;
     HWND m_hParent;
+    HINSTANCE m_hInstance;
 
     std::vector<std::wstring> m_messages;
     NetworkManager* m_networkManager;
@@ -43,6 +44,9 @@ private:
 
     static LRESULT CALLBACK ChatFormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
+
+    // Helper function to resolve proper module handle
+    static HINSTANCE ResolveModuleHandle(HINSTANCE hInstance);
 
     void InitializeControls();
     void SendChatMessage();
@@ -58,7 +62,7 @@ public:
     void EnableDisconnectControls(bool enable);
 
 public:
-    ChatForm(HWND parent);
+    ChatForm(HWND parent, HINSTANCE hInstance = nullptr);
     ~ChatForm();
 
     bool Show() const;

@@ -41,7 +41,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     MyRegisterClass(hInst, szWindowClass);
 
     // Create the chat form directly (no main window needed)
-    g_pChatForm = std::make_unique<ChatForm>(nullptr);
+    g_pChatForm = std::make_unique<ChatForm>(nullptr, hInstance);
 
     // Show the chat form immediately
     if (g_pChatForm)

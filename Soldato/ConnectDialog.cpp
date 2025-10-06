@@ -12,12 +12,12 @@
 #define ID_CONNECT_BTN     2004
 #define ID_CANCEL_BTN      2005
 
-ConnectDialog::ConnectDialog(HWND parent, ConnectSuccessCallback on_success)
-    : m_hParent(parent), m_hWnd(nullptr), m_on_success(on_success)
+ConnectDialog::ConnectDialog(HWND parent, ConnectSuccessCallback on_success, HINSTANCE hInstance)
+    : m_hParent(parent), m_hWnd(nullptr), m_on_success(on_success), m_hInstance(hInstance)
 {
     // Create the dialog window
     m_hWnd = CreateDialogParam(
-        GetModuleHandle(nullptr),
+        m_hInstance,
         MAKEINTRESOURCE(IDD_CONNECT_DIALOG),
         m_hParent,
         DialogProc,
