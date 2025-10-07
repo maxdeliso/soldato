@@ -7,12 +7,9 @@
 #include <mutex>
 #include <memory>
 
-constexpr auto MAX_LOADSTRING = 100;
+// Removed MAX_LOADSTRING - no longer needed after removing unused window registration code
 
-ATOM MyRegisterClass(HINSTANCE, LPCWSTR);
-BOOL InitInstance(HINSTANCE, int, LPCWSTR, LPCWSTR);
-LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK About(HWND, UINT, WPARAM, LPARAM);
+// Removed unused forward declarations - these functions are no longer needed
 
 // Chat form instance (no longer global - using smart pointer)
 std::unique_ptr<ChatForm> g_pChatForm;
@@ -25,135 +22,44 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
-    // Initialize Winsock using RAII wrapper
-    WinsockManager winsockManager;
-    if (!winsockManager.IsInitialized()) {
-        MessageBoxW(nullptr, L"Failed to initialize Winsock", L"Error", MB_OK | MB_ICONERROR);
-        return -1;
-    }
+    // Rich Edit library loading removed - using standard EDIT controls
 
-    HINSTANCE hInst = nullptr;
-    WCHAR szTitle[MAX_LOADSTRING];
-    WCHAR szWindowClass[MAX_LOADSTRING];
-
-    LoadStringW(hInst, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-    LoadStringW(hInst, IDC_SOLDATO, szWindowClass, MAX_LOADSTRING);
-    MyRegisterClass(hInst, szWindowClass);
-
-    // Create the chat form directly (no main window needed)
+    // Create the chat form directly, passing the CORRECT hInstance
+    // Note: Winsock initialization is handled by NetworkManager's static WinsockManager
     g_pChatForm = std::make_unique<ChatForm>(nullptr, hInstance);
 
     // Show the chat form immediately
     if (g_pChatForm)
     {
+        OutputDebugStringA("Soldato: Showing chat form\n");
         g_pChatForm->Show();
+        OutputDebugStringA("Soldato: Chat form shown, entering message loop\n");
     }
 
     MSG msg;
+    OutputDebugStringA("Soldato: About to enter message loop\n");
+
+    // --- START PATCH ---
+    HWND hConnectDialog = g_pChatForm->GetConnectDialogHandle();
 
     while (GetMessage(&msg, nullptr, 0, 0))
     {
+        // Check if the message is for the modeless connect dialog
+        if (hConnectDialog && IsDialogMessage(hConnectDialog, &msg))
+        {
+            // If it is, IsDialogMessage already processed it. Continue to the next message.
+            continue;
+        }
+
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
+    // --- END PATCH ---
+
+    OutputDebugStringA("Soldato: Message loop ended\n");
 
     // Smart pointer handles cleanup automatically
     g_pChatForm.reset();
 
     return (int) msg.wParam;
-}
-
-ATOM MyRegisterClass(HINSTANCE hInstance, LPCWSTR szWindowClass)
-{
-    WNDCLASSEXW wcex{};
-
-    wcex.cbSize = sizeof(WNDCLASSEX);
-
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc    = WndProc;
-    wcex.cbClsExtra     = 0;
-    wcex.cbWndExtra     = 0;
-    wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_SOLDATO));
-    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_SOLDATO);
-    wcex.lpszClassName  = szWindowClass;
-    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
-
-    return RegisterClassExW(&wcex);
-}
-
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow, LPCWSTR szWindowClass, LPCWSTR szTitle)
-{
-   HWND hWnd = CreateWindowW(
-     szWindowClass,
-     szTitle,
-     WS_OVERLAPPEDWINDOW,
-     CW_USEDEFAULT,
-     0,
-     CW_USEDEFAULT,
-     0,
-     nullptr,
-     nullptr,
-     hInstance,
-     nullptr);
-
-   if (!hWnd)
-   {
-      return FALSE;
-   }
-
-   ShowWindow(hWnd, nCmdShow);
-   UpdateWindow(hWnd);
-
-   return TRUE;
-}
-
-LRESULT CALLBACK WndProc(
-  HWND hWnd,
-  UINT message,
-  WPARAM wParam,
-  LPARAM lParam)
-{
-    switch (message)
-    {
-    case WM_COMMAND:
-        {
-            int wmId = LOWORD(wParam);
-
-            switch (wmId)
-            {
-            case IDM_ABOUT:
-                DialogBox(NULL, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_OPEN_CHAT:
-                if (g_pChatForm)
-                {
-                    g_pChatForm->Show();
-                }
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
-            }
-        }
-        break;
-    case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            EndPaint(hWnd, &ps);
-        }
-        break;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        break;
-    default:
-        return DefWindowProc(hWnd, message, wParam, lParam);
-    }
-
-    return 0;
 }

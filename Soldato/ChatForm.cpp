@@ -30,6 +30,7 @@ LRESULT CALLBACK MessageInputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
         HWND parent = GetParent(hWnd);
         if (parent)
         {
+            OutputDebugStringA("MessageInputProc: Enter key pressed, sending WM_SEND_MESSAGE\n");
             PostMessage(parent, WM_SEND_MESSAGE, 0, 0);
         }
         return 0; // Don't process the Enter key
@@ -37,7 +38,14 @@ LRESULT CALLBACK MessageInputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
 
     // Call the original window procedure
     WNDPROC originalProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-    return CallWindowProc(originalProc, hWnd, message, wParam, lParam);
+    if (originalProc)
+    {
+        return CallWindowProc(originalProc, hWnd, message, wParam, lParam);
+    }
+    else
+    {
+        return DefWindowProc(hWnd, message, wParam, lParam);
+    }
 }
 
 ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd(nullptr), m_networkManager(nullptr), m_connectDialog(nullptr), m_peerPanel(nullptr), m_hFont(nullptr), m_hInstance(hInstance)
@@ -45,31 +53,34 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd
     // Resolve the proper module handle
     m_hInstance = ResolveModuleHandle(m_hInstance);
 
-    // Register the chat form window class
-    WNDCLASSEXW wcex = {};
-    wcex.cbSize = sizeof(WNDCLASSEX);
-    wcex.style = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc = ChatFormProc;
-    wcex.cbClsExtra = 0;
-    wcex.cbWndExtra = sizeof(ChatForm*);
-    wcex.hInstance = m_hInstance;
-    wcex.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SOLDATO));
-    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground = CreateSolidBrush(RGB(0, 20, 0)); // Dark green-black background
-    wcex.lpszMenuName = nullptr;
-    wcex.lpszClassName = L"ChatFormClass";
-    wcex.hIconSm = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SMALL));
+    // Register the chat form window class - simplified
+    static bool classRegistered = false;
+    if (!classRegistered) {
+        WNDCLASSEXW wcex = {};
+        wcex.cbSize = sizeof(WNDCLASSEX);
+        wcex.style = CS_HREDRAW | CS_VREDRAW;
+        wcex.lpfnWndProc = ChatFormProc;
+        wcex.cbClsExtra = 0;
+        wcex.cbWndExtra = sizeof(ChatForm*);
+        wcex.hInstance = m_hInstance;
+        wcex.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SOLDATO));
+        wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // Standard background
+        wcex.lpszMenuName = nullptr;
+        wcex.lpszClassName = L"ChatFormClass";
+        wcex.hIconSm = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
-    RegisterClassExW(&wcex);
+        RegisterClassExW(&wcex);
+        classRegistered = true;
+    }
 
-    // Create the chat form window
-    m_hWnd = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_DLGMODALFRAME,
+    // Create the chat form window with proper menu
+    m_hWnd = CreateWindowW(
         L"ChatFormClass",
         L"Soldato",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT,
-        500, 400,
+        800, 600,
         m_hParent,
         LoadMenu(m_hInstance, MAKEINTRESOURCE(IDC_SOLDATO)),
         m_hInstance,
@@ -78,11 +89,23 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd
 
     if (m_hWnd)
     {
-        InitializeControls();
+        OutputDebugStringA("ChatForm: Window created successfully\n");
         CenterWindow();
+
+        // Show window first to ensure proper sizing
+        ShowWindow(m_hWnd, SW_SHOW);
+        UpdateWindow(m_hWnd);
+
+        // Ensure window is brought to foreground and has focus
+        SetForegroundWindow(m_hWnd);
+        BringWindowToTop(m_hWnd);
+
+        // Initialize controls after window is shown and sized
+        InitializeControls();
 
         // Initialize network manager
         m_networkManager = &NetworkManager::GetInstance();
+        OutputDebugStringA("ChatForm: NetworkManager instance obtained\n");
         m_networkManager->SetNotificationWindow(m_hWnd);
         m_networkManager->SetMessageCallback([this](const std::string& sender, const std::string& message) {
             this->OnNetworkMessage(sender, message);
@@ -102,7 +125,9 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd
         }, m_hInstance);
 
         // Create peer panel
+        OutputDebugStringA("ChatForm: About to create PeerPanel\n");
         m_peerPanel = std::make_unique<PeerPanel>(m_hWnd, m_hInstance);
+        OutputDebugStringA("ChatForm: PeerPanel created successfully\n");
 
         // Set initial layout for peer panel
         RECT clientRect;
@@ -174,9 +199,17 @@ LRESULT CALLBACK ChatForm::ChatFormProc(HWND hWnd, UINT message, WPARAM wParam, 
 
 LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 {
+    // Debug: Log important messages
+    if (message == WM_COMMAND || message == WM_CLOSE || message == WM_DESTROY || message == WM_SIZE) {
+        char debugMsg[256];
+        sprintf_s(debugMsg, "ChatForm: Received message 0x%04X\n", message);
+        OutputDebugStringA(debugMsg);
+    }
+
     switch (message)
     {
     case WM_CREATE:
+        OutputDebugStringA("ChatForm: WM_CREATE received\n");
         return 0;
 
 
@@ -184,6 +217,13 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         if (wParam == VK_ESCAPE)
         {
             PostQuitMessage(0);
+            return 0;
+        }
+        else if (wParam == VK_F1)
+        {
+            // Test: Manually trigger send message
+            OutputDebugStringA("ChatForm: F1 pressed - manually triggering send\n");
+            AddChatMessage(L"DEBUG", L"F1 TEST MESSAGE");
             return 0;
         }
         break;
@@ -233,30 +273,55 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             int wmId = LOWORD(wParam);
             int wmEvent = HIWORD(wParam);
 
+            char debugMsg[256];
+            sprintf_s(debugMsg, "ChatForm: WM_COMMAND received - ID: %d, Event: %d\n", wmId, wmEvent);
+            OutputDebugStringA(debugMsg);
+
             switch (wmId)
             {
             case ID_SEND_BUTTON:
+                OutputDebugStringA("ChatForm: ID_SEND_BUTTON clicked\n");
                 AddChatMessage(L"DEBUG", L"SEND BUTTON CLICKED");
                 SendChatMessage();
                 break;
+            case ID_CHAT_HISTORY:
+                OutputDebugStringA("ChatForm: ID_CHAT_HISTORY notification received\n");
+                // Handle chat history control notifications if needed
+                break;
+            case ID_MESSAGE_INPUT:
+                OutputDebugStringA("ChatForm: ID_MESSAGE_INPUT notification received\n");
+                // Handle message input control notifications if needed
+                if (wmEvent == EN_CHANGE) {
+                    OutputDebugStringA("ChatForm: Message input text changed\n");
+                }
+                break;
             case IDM_ABOUT:
+                OutputDebugStringA("ChatForm: IDM_ABOUT clicked\n");
                 OnAbout();
                 break;
             case IDM_CONNECT:
+                OutputDebugStringA("ChatForm: IDM_CONNECT clicked\n");
                 OnConnect();
                 break;
             case IDM_DISCONNECT:
+                OutputDebugStringA("ChatForm: IDM_DISCONNECT clicked\n");
                 OnDisconnect();
                 break;
             case IDM_REFRESH:
+                OutputDebugStringA("ChatForm: IDM_REFRESH clicked\n");
                 UpdateConnectionUI();
                 break;
             case IDM_EXIT:
+                OutputDebugStringA("ChatForm: IDM_EXIT clicked\n");
                 PostQuitMessage(0);
+                break;
+            default:
+                sprintf_s(debugMsg, "ChatForm: Unknown WM_COMMAND ID: %d (0x%04X)\n", wmId, wmId);
+                OutputDebugStringA(debugMsg);
                 break;
             }
         }
-        break;
+        return 0; // WM_COMMAND is fully handled, don't pass to DefWindowProc
 
     case WM_SIZE:
         {
@@ -282,6 +347,20 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             }
         }
         break;
+
+    case WM_LBUTTONDOWN:
+        {
+            int x = LOWORD(lParam);
+            int y = HIWORD(lParam);
+            char debugMsg[256];
+            sprintf_s(debugMsg, "ChatForm: Left mouse button clicked at (%d, %d)\n", x, y);
+            OutputDebugStringA(debugMsg);
+        }
+        break;
+
+    case WM_ERASEBKGND:
+        // Prevent background erasure to eliminate flicker
+        return TRUE;
 
     case WM_PAINT:
         {
@@ -347,30 +426,40 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         break;
 
     case WM_CLOSE:
-        PostQuitMessage(0);
+        OutputDebugStringA("ChatForm: WM_CLOSE received\n");
+        DestroyWindow(m_hWnd);
         return 0;
 
     case WM_DESTROY:
+        OutputDebugStringA("ChatForm: WM_DESTROY received - posting quit message\n");
         PostQuitMessage(0);
         return 0;
-
-    default:
-        return DefWindowProc(m_hWnd, message, wParam, lParam);
     }
 
-    return 0;
+    // Any message that isn't explicitly handled and returned above
+    // should be passed to the default procedure.
+    return DefWindowProc(m_hWnd, message, wParam, lParam);
 }
 
 void ChatForm::InitializeControls()
 {
+    OutputDebugStringA("ChatForm: InitializeControls() called\n");
+
     // Get initial window size for proper layout
     RECT clientRect;
     GetClientRect(m_hWnd, &clientRect);
     int width = clientRect.right - clientRect.left;
     int height = clientRect.bottom - clientRect.top;
 
+    char debugMsg[256];
+    sprintf_s(debugMsg, "ChatForm: Window size - Width: %d, Height: %d\n", width, height);
+    OutputDebugStringA(debugMsg);
+
     // Calculate split layout: chat on left (70%), peer panel on right (30%)
     int chatWidth = static_cast<int>(width * 0.7);
+
+    sprintf_s(debugMsg, "ChatForm: Calculated chat width: %d\n", chatWidth);
+    OutputDebugStringA(debugMsg);
 
     // Create chat history (read-only RichTextBox) with cyberpunk styling
     m_hChatHistory = CreateWindowExW(
@@ -384,6 +473,28 @@ void ChatForm::InitializeControls()
         m_hInstance,
         nullptr
     );
+
+    if (m_hChatHistory) {
+        OutputDebugStringA("ChatForm: Chat history control created successfully\n");
+
+        // Debug: Check if control is visible
+        if (IsWindowVisible(m_hChatHistory)) {
+            OutputDebugStringA("ChatForm: Chat history is visible\n");
+        } else {
+            OutputDebugStringA("ChatForm: WARNING - Chat history is not visible\n");
+        }
+
+        // Debug: Check control position and size (client coordinates)
+        RECT chatRect;
+        GetClientRect(m_hChatHistory, &chatRect);
+        char debugMsg[256];
+        sprintf_s(debugMsg, "ChatForm: Chat history client rect - Left: %d, Top: %d, Right: %d, Bottom: %d\n",
+                 chatRect.left, chatRect.top, chatRect.right, chatRect.bottom);
+        OutputDebugStringA(debugMsg);
+    } else {
+        OutputDebugStringA("ChatForm: ERROR - Failed to create chat history control\n");
+    }
+
 
     // Set cyberpunk monospace font for chat history
     m_hFont = CreateFontW(
@@ -402,13 +513,34 @@ void ChatForm::InitializeControls()
         WS_EX_CLIENTEDGE,
         L"EDIT",
         L"",
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
         10, height - 60, chatWidth - 90, 25,
         m_hWnd,
         (HMENU)ID_MESSAGE_INPUT,
         m_hInstance,
         nullptr
     );
+
+    if (m_hMessageInput) {
+        OutputDebugStringA("ChatForm: Message input control created successfully\n");
+
+        // Debug: Check if control is visible
+        if (IsWindowVisible(m_hMessageInput)) {
+            OutputDebugStringA("ChatForm: Message input is visible\n");
+        } else {
+            OutputDebugStringA("ChatForm: WARNING - Message input is not visible\n");
+        }
+
+        // Debug: Check control position and size (client coordinates)
+        RECT inputRect;
+        GetClientRect(m_hMessageInput, &inputRect);
+        char debugMsg[256];
+        sprintf_s(debugMsg, "ChatForm: Message input client rect - Left: %d, Top: %d, Right: %d, Bottom: %d\n",
+                 inputRect.left, inputRect.top, inputRect.right, inputRect.bottom);
+        OutputDebugStringA(debugMsg);
+    } else {
+        OutputDebugStringA("ChatForm: ERROR - Failed to create message input control\n");
+    }
 
     // Set font for message input
     SendMessage(m_hMessageInput, WM_SETFONT, (WPARAM)m_hFont, TRUE);
@@ -421,17 +553,47 @@ void ChatForm::InitializeControls()
     SetWindowLongPtr(m_hMessageInput, GWLP_WNDPROC, (LONG_PTR)MessageInputProc);
 
     // Create send button with cyberpunk styling
+    int buttonX = chatWidth - 80;
+    int buttonY = height - 60;
+    int buttonWidth = 70;
+    int buttonHeight = 25;
+
+    sprintf_s(debugMsg, "ChatForm: Creating send button at (%d, %d) size %dx%d\n",
+              buttonX, buttonY, buttonWidth, buttonHeight);
+    OutputDebugStringA(debugMsg);
+
     m_hSendButton = CreateWindowExW(
         0,
         L"BUTTON",
         L"[SEND]",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_DEFPUSHBUTTON,
-        chatWidth - 80, height - 60, 70, 25,
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
+        buttonX, buttonY, buttonWidth, buttonHeight,
         m_hWnd,
         (HMENU)ID_SEND_BUTTON,
         m_hInstance,
         nullptr
     );
+
+    if (m_hSendButton) {
+        OutputDebugStringA("ChatForm: Send button control created successfully\n");
+
+        // Debug: Check if control is visible
+        if (IsWindowVisible(m_hSendButton)) {
+            OutputDebugStringA("ChatForm: Send button is visible\n");
+        } else {
+            OutputDebugStringA("ChatForm: WARNING - Send button is not visible\n");
+        }
+
+        // Debug: Check control position and size (client coordinates)
+        RECT buttonRect;
+        GetClientRect(m_hSendButton, &buttonRect);
+        char debugMsg[256];
+        sprintf_s(debugMsg, "ChatForm: Send button client rect - Left: %d, Top: %d, Right: %d, Bottom: %d\n",
+                 buttonRect.left, buttonRect.top, buttonRect.right, buttonRect.bottom);
+        OutputDebugStringA(debugMsg);
+    } else {
+        OutputDebugStringA("ChatForm: ERROR - Failed to create send button control\n");
+    }
 
     // Set font for send button
     SendMessage(m_hSendButton, WM_SETFONT, (WPARAM)m_hFont, TRUE);
@@ -442,8 +604,30 @@ void ChatForm::InitializeControls()
 
     AddChatMessage(L"SYSTEM", L"READY ...");
 
+    // Force window update to ensure controls are displayed
+    UpdateWindow(m_hWnd);
+    InvalidateRect(m_hWnd, nullptr, TRUE);
+
     // Set focus to message input
-    SetFocus(m_hMessageInput);
+    if (m_hMessageInput) {
+        SetFocus(m_hMessageInput);
+        OutputDebugStringA("ChatForm: Initial focus set to message input\n");
+
+        // Verify the control is enabled and can receive focus
+        if (IsWindowEnabled(m_hMessageInput)) {
+            OutputDebugStringA("ChatForm: Message input is enabled\n");
+        } else {
+            OutputDebugStringA("ChatForm: WARNING - Message input is disabled\n");
+        }
+
+        if (IsWindowVisible(m_hMessageInput)) {
+            OutputDebugStringA("ChatForm: Message input is visible\n");
+        } else {
+            OutputDebugStringA("ChatForm: WARNING - Message input is not visible\n");
+        }
+    } else {
+        OutputDebugStringA("ChatForm: ERROR - Cannot set focus, m_hMessageInput is null\n");
+    }
 }
 
 void ChatForm::CenterWindow() const
@@ -469,18 +653,46 @@ void ChatForm::CenterWindow() const
         y = (screenHeight - (windowRect.bottom - windowRect.top)) / 2;
     }
 
-    SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+    SetWindowPos(m_hWnd, HWND_TOP, x, y, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
 }
 
 bool ChatForm::Show() const
 {
     if (m_hWnd)
     {
+        OutputDebugStringA("ChatForm: Show() called - showing window\n");
+
+        // Show the window first
         ShowWindow(m_hWnd, SW_SHOW);
-        SetForegroundWindow(m_hWnd);
-        SetFocus(m_hMessageInput);
+        UpdateWindow(m_hWnd);
+
+        // Use the proper three-step foreground window pattern
+        BringWindowToForeground(m_hWnd);
+
+        // Set focus to message input for immediate user interaction
+        if (m_hMessageInput) {
+            SetFocus(m_hMessageInput);
+            OutputDebugStringA("ChatForm: Focus set to message input\n");
+        } else {
+            OutputDebugStringA("ChatForm: WARNING - m_hMessageInput is null\n");
+        }
+
+        // Debug: Check if window is actually visible and active
+        if (IsWindowVisible(m_hWnd)) {
+            OutputDebugStringA("ChatForm: Window is visible\n");
+        } else {
+            OutputDebugStringA("ChatForm: WARNING - Window is not visible\n");
+        }
+
+        if (GetForegroundWindow() == m_hWnd) {
+            OutputDebugStringA("ChatForm: Window is in foreground\n");
+        } else {
+            OutputDebugStringA("ChatForm: WARNING - Window is not in foreground\n");
+        }
+
         return true;
     }
+    OutputDebugStringA("ChatForm: Show() called but m_hWnd is null\n");
     return false;
 }
 
@@ -681,6 +893,14 @@ void ChatForm::EnableDisconnectControls(bool enable)
     }
 }
 
+HWND ChatForm::GetConnectDialogHandle() const
+{
+    if (m_connectDialog) {
+        return m_connectDialog->GetHandle();
+    }
+    return nullptr;
+}
+
 void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& message)
 {
     // This is EXECUTED on the Network Thread
@@ -727,6 +947,59 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     }
 
     return (INT_PTR)FALSE;
+}
+
+// Helper function to bring window to foreground using proper Windows pattern
+void ChatForm::BringWindowToForeground(HWND hWnd)
+{
+    if (!hWnd) return;
+
+    // Step 1: Try the simple approach first
+    if (SetForegroundWindow(hWnd)) {
+        OutputDebugStringA("ChatForm: SetForegroundWindow succeeded\n");
+        return;
+    }
+
+    // Step 2: If simple approach fails, use FlashWindow to get user's attention
+    OutputDebugStringA("ChatForm: SetForegroundWindow failed, using FlashWindow\n");
+    FlashWindow(hWnd, TRUE);
+
+    // Step 3: Use the forceful method with AttachThreadInput
+    HWND foregroundWnd = GetForegroundWindow();
+    if (!foregroundWnd) {
+        OutputDebugStringA("ChatForm: No foreground window, using basic approach\n");
+        BringWindowToTop(hWnd);
+        ShowWindow(hWnd, SW_SHOW);
+        SetForegroundWindow(hWnd);
+        return;
+    }
+
+    // Get thread IDs
+    DWORD foregroundThreadId = GetWindowThreadProcessId(foregroundWnd, nullptr);
+    DWORD currentThreadId = GetCurrentThreadId();
+
+    // If we're not the foreground thread, attach to it
+    if (currentThreadId != foregroundThreadId) {
+        OutputDebugStringA("ChatForm: Attaching to foreground thread\n");
+        AttachThreadInput(currentThreadId, foregroundThreadId, TRUE);
+    }
+
+    // Bring the window to the top and set it as foreground
+    BringWindowToTop(hWnd);
+    ShowWindow(hWnd, SW_SHOW);
+    SetForegroundWindow(hWnd);
+
+    // Detach from the foreground thread's input queue (CRITICAL!)
+    if (currentThreadId != foregroundThreadId) {
+        OutputDebugStringA("ChatForm: Detaching from foreground thread\n");
+        AttachThreadInput(currentThreadId, foregroundThreadId, FALSE);
+    }
+
+    // Additional attempt: Try to make the window topmost temporarily
+    SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+
+    OutputDebugStringA("ChatForm: BringWindowToForeground completed\n");
 }
 
 // Helper function to resolve proper module handle

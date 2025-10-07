@@ -48,6 +48,9 @@ private:
     // Helper function to resolve proper module handle
     static HINSTANCE ResolveModuleHandle(HINSTANCE hInstance);
 
+    // Helper function to bring window to foreground using proper Windows pattern
+    static void BringWindowToForeground(HWND hWnd);
+
     void InitializeControls();
     void SendChatMessage();
     void CenterWindow() const;
@@ -60,6 +63,7 @@ private:
 public:
     void UpdateConnectionUI();
     void EnableDisconnectControls(bool enable);
+    HWND GetConnectDialogHandle() const;
 
 public:
     ChatForm(HWND parent, HINSTANCE hInstance = nullptr);

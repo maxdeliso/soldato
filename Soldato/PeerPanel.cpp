@@ -21,6 +21,8 @@
 PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
     : m_hParent(parent), m_hWnd(nullptr), m_hPeerList(nullptr), m_hPeerCountLabel(nullptr), m_hFont(nullptr), m_hInstance(hInstance) {
 
+    OutputDebugStringA("PeerPanel: Constructor started\n");
+
     // Register the peer panel window class
     WNDCLASSEXW wcex = {};
     wcex.cbSize = sizeof(WNDCLASSEX);
@@ -37,6 +39,7 @@ PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
     wcex.hIconSm = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
     RegisterClassExW(&wcex);
+    OutputDebugStringA("PeerPanel: Window class registered\n");
 
     // Create the peer panel window
     m_hWnd = CreateWindowExW(
@@ -52,8 +55,14 @@ PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
     );
 
     if (m_hWnd) {
+        OutputDebugStringA("PeerPanel: Window created, initializing controls\n");
         InitializeControls();
+        OutputDebugStringA("PeerPanel: Controls initialized\n");
+    } else {
+        OutputDebugStringA("PeerPanel: ERROR - Window creation failed\n");
     }
+
+    OutputDebugStringA("PeerPanel: Constructor completed\n");
 }
 
 PeerPanel::~PeerPanel() {
@@ -87,6 +96,7 @@ LRESULT CALLBACK PeerPanel::PeerPanelProc(HWND hWnd, UINT message, WPARAM wParam
 LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_CREATE:
+        // WM_CREATE is fully handled, we can return 0
         return 0;
 
     case WM_SIZE:
@@ -100,7 +110,7 @@ LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             // Resize peer list
             SetWindowPos(m_hPeerList, nullptr, 10, 40, width - 20, height - 50, SWP_NOZORDER);
         }
-        break;
+        // Let this fall through to DefWindowProc for proper child control management
 
     case WM_PAINT:
         {
@@ -132,16 +142,19 @@ LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
 
             EndPaint(m_hWnd, &ps);
         }
-        break;
-
-    default:
-        return DefWindowProc(m_hWnd, message, wParam, lParam);
+        // For WM_PAINT, returning 0 is acceptable after BeginPaint/EndPaint,
+        // but allowing it to fall through is also safe and simpler
+        return 0;
     }
 
-    return 0;
+    // Any message not handled above (including WM_SIZE now)
+    // MUST be passed to the default window procedure
+    return DefWindowProc(m_hWnd, message, wParam, lParam);
 }
 
 void PeerPanel::InitializeControls() {
+    OutputDebugStringA("PeerPanel: InitializeControls started\n");
+
     // Create peer count label
     m_hPeerCountLabel = CreateWindowExW(
         0,
@@ -184,7 +197,9 @@ void PeerPanel::InitializeControls() {
     SendMessage(m_hPeerList, LB_SETTEXTCOLOR, 0, RGB(0, 255, 0)); // Bright green text
 
     // Initial state
+    OutputDebugStringA("PeerPanel: About to call UpdatePeerCount\n");
     UpdatePeerCount();
+    OutputDebugStringA("PeerPanel: UpdatePeerCount completed\n");
 }
 
 bool PeerPanel::Show() const {

@@ -5,6 +5,25 @@
 #include <sstream>
 #include <ctime>
 
+// Helper function to get a descriptive error string
+void LogWinsockError(const std::string& context) {
+    int error_code = WSAGetLastError();
+    char* msg_buf = nullptr;
+    FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL, error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPSTR)&msg_buf, 0, NULL);
+
+    std::string error_message = context + " failed with error " + std::to_string(error_code);
+    if (msg_buf) {
+        error_message += ": " + std::string(msg_buf);
+        LocalFree(msg_buf);
+    }
+
+    // Use OutputDebugStringA for logging
+    OutputDebugStringA(error_message.c_str());
+}
+
 WinsockManager NetworkManager::s_winsockManager;
 
 NetworkManager::NetworkManager()
@@ -32,6 +51,13 @@ NetworkManager::~NetworkManager()
 NetworkManager& NetworkManager::GetInstance()
 {
     static NetworkManager instance; // Created on first call, destroyed at exit
+
+    // Ensure Winsock is initialized
+    if (!s_winsockManager.IsInitialized()) {
+        // This should not happen, but if it does, we need to handle it
+        OutputDebugStringA("NetworkManager: Winsock initialization failed!\n");
+    }
+
     return instance;
 }
 
@@ -103,9 +129,10 @@ void NetworkManager::CleanupSocketEvents()
 
 bool NetworkManager::Connect(const std::string& multicastIP, int port, const std::string& username)
 {
-    if (m_connected.load())
-    {
-        Disconnect();
+    // Fail fast if already connected.
+    if (m_connected.load()) {
+        OutputDebugStringA("Connect() called while already connected. Ignoring.");
+        return false;
     }
 
     // Protect member variable access with mutex
@@ -132,6 +159,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
     m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET)
     {
+        LogWinsockError("socket()");
         CleanupSocketEvents();
         return false;
     }
@@ -140,6 +168,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
     int reuse = 1;
     if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR)
     {
+        LogWinsockError("setsockopt(SO_REUSEADDR)");
         closesocket(m_socket);
         m_socket = INVALID_SOCKET;
         CleanupSocketEvents();
@@ -154,6 +183,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
 
     if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
     {
+        LogWinsockError("bind()");
         closesocket(m_socket);
         m_socket = INVALID_SOCKET;
         CleanupSocketEvents();
@@ -172,6 +202,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
 
     if (setsockopt(m_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
     {
+        LogWinsockError("setsockopt(IP_ADD_MEMBERSHIP)");
         closesocket(m_socket);
         m_socket = INVALID_SOCKET;
         CleanupSocketEvents();
@@ -181,6 +212,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
     // Associate socket with event object for read events
     if (WSAEventSelect(m_socket, m_socketEvent, FD_READ) == SOCKET_ERROR)
     {
+        LogWinsockError("WSAEventSelect()");
         closesocket(m_socket);
         m_socket = INVALID_SOCKET;
         CleanupSocketEvents();
@@ -742,6 +774,13 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
             // Send ACK for valid message
             SendAcknowledgment(message.messageId, true);
 
+            // Create a thread-safe local copy of the username
+            std::string username_copy;
+            {
+                std::lock_guard<std::mutex> lock(m_memberMutex);
+                username_copy = m_username;
+            }
+
             // Display the message
             MessageCallback messageCallback;
             {
@@ -749,7 +788,7 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
                 messageCallback = m_messageCallback;
             }
             if (messageCallback) {
-                messageCallback(m_username, message.body);
+                messageCallback(username_copy, message.body);
             }
 
             SocketEventCallback socketCallback;
