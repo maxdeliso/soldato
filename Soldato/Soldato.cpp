@@ -7,13 +7,6 @@
 #include <mutex>
 #include <memory>
 
-// Removed MAX_LOADSTRING - no longer needed after removing unused window registration code
-
-// Removed unused forward declarations - these functions are no longer needed
-
-// Chat form instance (no longer global - using smart pointer)
-std::unique_ptr<ChatForm> g_pChatForm;
-
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                       _In_opt_ HINSTANCE hPrevInstance,
                       _In_ LPWSTR    lpCmdLine,
@@ -27,7 +20,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     // Create the chat form directly, passing the CORRECT hInstance
     // Note: Winsock initialization is handled by NetworkManager's static WinsockManager
-    g_pChatForm = std::make_unique<ChatForm>(nullptr, hInstance);
+    std::unique_ptr<ChatForm> g_pChatForm = std::make_unique<ChatForm>(nullptr, hInstance);
 
     // Show the chat form immediately
     if (g_pChatForm)
