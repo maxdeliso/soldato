@@ -2,6 +2,7 @@
 #include "ChatForm.h"
 #include "Resource.h"
 #include "StringUtils.h"
+#include "DebugUtils.h"
 #include <commctrl.h>
 #include <richedit.h>
 #include <sstream>
@@ -13,10 +14,12 @@
 // Forward declaration
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 
-// Control IDs
-#define ID_CHAT_HISTORY    1001
-#define ID_MESSAGE_INPUT   1002
-#define ID_SEND_BUTTON     1003
+// Control IDs - using enum class for type safety
+enum class ControlId {
+    ChatHistory = 1001,
+    MessageInput = 1002,
+    SendButton = 1003
+};
 
 // Custom message for Enter key
 #define WM_SEND_MESSAGE    (WM_USER + 1)
@@ -30,7 +33,7 @@ LRESULT CALLBACK MessageInputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
         HWND parent = GetParent(hWnd);
         if (parent)
         {
-            OutputDebugStringA("MessageInputProc: Enter key pressed, sending WM_SEND_MESSAGE\n");
+            DEBUG_LOG("MessageInputProc: Enter key pressed, sending WM_SEND_MESSAGE\n");
             PostMessage(parent, WM_SEND_MESSAGE, 0, 0);
         }
         return 0; // Don't process the Enter key
@@ -89,7 +92,7 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd
 
     if (m_hWnd)
     {
-        OutputDebugStringA("ChatForm: Window created successfully\n");
+        DEBUG_LOG("ChatForm: Window created successfully\n");
         CenterWindow();
 
         // Show window first to ensure proper sizing
@@ -279,16 +282,16 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 
             switch (wmId)
             {
-            case ID_SEND_BUTTON:
+            case static_cast<int>(ControlId::SendButton):
                 OutputDebugStringA("ChatForm: ID_SEND_BUTTON clicked\n");
                 AddChatMessage(L"DEBUG", L"SEND BUTTON CLICKED");
                 SendChatMessage();
                 break;
-            case ID_CHAT_HISTORY:
+            case static_cast<int>(ControlId::ChatHistory):
                 OutputDebugStringA("ChatForm: ID_CHAT_HISTORY notification received\n");
                 // Handle chat history control notifications if needed
                 break;
-            case ID_MESSAGE_INPUT:
+            case static_cast<int>(ControlId::MessageInput):
                 OutputDebugStringA("ChatForm: ID_MESSAGE_INPUT notification received\n");
                 // Handle message input control notifications if needed
                 if (wmEvent == EN_CHANGE) {
@@ -461,15 +464,15 @@ void ChatForm::InitializeControls()
     sprintf_s(debugMsg, "ChatForm: Calculated chat width: %d\n", chatWidth);
     OutputDebugStringA(debugMsg);
 
-    // Create chat history (read-only RichTextBox) with cyberpunk styling
+    // Create chat history (read-only Rich Edit Control) with cyberpunk styling
     m_hChatHistory = CreateWindowExW(
         WS_EX_CLIENTEDGE,
-        L"EDIT",
+        L"RichEdit",
         L"",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
         10, 10, chatWidth - 20, height - 80,
         m_hWnd,
-        (HMENU)ID_CHAT_HISTORY,
+        (HMENU)static_cast<int>(ControlId::ChatHistory),
         m_hInstance,
         nullptr
     );
@@ -516,7 +519,7 @@ void ChatForm::InitializeControls()
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
         10, height - 60, chatWidth - 90, 25,
         m_hWnd,
-        (HMENU)ID_MESSAGE_INPUT,
+        (HMENU)static_cast<int>(ControlId::MessageInput),
         m_hInstance,
         nullptr
     );
@@ -569,7 +572,7 @@ void ChatForm::InitializeControls()
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
         buttonX, buttonY, buttonWidth, buttonHeight,
         m_hWnd,
-        (HMENU)ID_SEND_BUTTON,
+        (HMENU)static_cast<int>(ControlId::SendButton),
         m_hInstance,
         nullptr
     );
@@ -711,20 +714,36 @@ bool ChatForm::IsVisible() const
 
 void ChatForm::AddChatMessage(const std::wstring& sender, const std::wstring& message)
 {
-    std::wstring formattedMessage = L"[" + sender + L"]: " + message + L"\r\n";
+    HWND hChat = m_hChatHistory;
+    SendMessage(hChat, EM_SETSEL, (WPARAM)-1, (LPARAM)-1); // Move to the end
 
-    // Get current text length
-    int textLength = GetWindowTextLength(m_hChatHistory);
+    // Set color for sender (yellow)
+    CHARFORMAT2W cf_sender{};
+    cf_sender.cbSize = sizeof(cf_sender);
+    cf_sender.dwMask = CFM_COLOR | CFM_BOLD;
+    cf_sender.dwEffects = CFE_BOLD;
+    cf_sender.crTextColor = RGB(255, 255, 0);
+    SendMessage(hChat, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf_sender);
 
-    // Set selection to end
-    SendMessage(m_hChatHistory, EM_SETSEL, textLength, textLength);
+    std::wstring sender_part = L"[" + sender + L"]: ";
+    SendMessage(hChat, EM_REPLACESEL, FALSE, (LPARAM)sender_part.c_str());
 
-    // Insert new message
-    SendMessage(m_hChatHistory, EM_REPLACESEL, FALSE, (LPARAM)formattedMessage.c_str());
+    // Set color for message (green)
+    CHARFORMAT2W cf_message{};
+    cf_message.cbSize = sizeof(cf_message);
+    cf_message.dwMask = CFM_COLOR;
+    cf_message.dwEffects = 0; // Not bold
+    cf_message.crTextColor = RGB(0, 255, 0);
+    SendMessage(hChat, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf_message);
+
+    std::wstring message_part = message + L"\r\n";
+    SendMessage(hChat, EM_REPLACESEL, FALSE, (LPARAM)message_part.c_str());
 
     // Scroll to bottom
-    SendMessage(m_hChatHistory, EM_SCROLL, SB_BOTTOM, 0);
+    SendMessage(hChat, EM_SCROLL, SB_BOTTOM, 0);
 
+    // Store formatted message for compatibility
+    std::wstring formattedMessage = sender_part + message_part;
     m_messages.push_back(formattedMessage);
 }
 

@@ -22,7 +22,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
-    // Rich Edit library loading removed - using standard EDIT controls
+    // Load Rich Edit library for syntax highlighting
+    LoadLibrary(L"riched32.dll");
 
     // Create the chat form directly, passing the CORRECT hInstance
     // Note: Winsock initialization is handled by NetworkManager's static WinsockManager

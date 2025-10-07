@@ -129,6 +129,7 @@
   <ItemGroup>
     <ClInclude Include="ChatForm.h" />
     <ClInclude Include="ConnectDialog.h" />
+    <ClInclude Include="DebugUtils.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="json.hpp" />
     <ClInclude Include="Message.h" />
