@@ -749,7 +749,9 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
             m_messageTracker->processAcknowledgment(message);
         }
 
-        // Display acknowledgment in chat
+        // REMOVE this block. Acknowledgment bodies should not be displayed in the chat.
+        // The UI will be updated via the WM_APP_UPDATE_ACK message posted from the tracker.
+        /*
         MessageCallback messageCallback;
         {
             std::lock_guard<std::mutex> lock(m_callbackMutex);
@@ -758,6 +760,7 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
         if (messageCallback) {
             messageCallback("System", message.body);
         }
+        */
 
         SocketEventCallback socketCallback;
         {

@@ -4,6 +4,7 @@
 #include "StringUtils.h"
 #include "DebugUtils.h"
 #include "Message.h"
+#include "json.hpp"
 #include <commctrl.h>
 #include <richedit.h>
 #include <sstream>
@@ -1097,13 +1098,6 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
 
     DEBUG_LOG("ChatForm: OnNetworkMessage received from: " + sender + ", message: " + message);
 
-    // Skip processing if this is a system message with ACK-related content
-    // These are already handled by OnSocketEvent and don't need JSON parsing
-    if (sender == "System" && (message == "Message received" || message == "Message rejected")) {
-        DEBUG_LOG("ChatForm: Skipping ACK system message - already processed by OnSocketEvent");
-        return;
-    }
-
     // Check if this is an acknowledgment message or regular JSON message
     if (m_messageTracker) {
         // Try to parse as JSON
@@ -1141,18 +1135,22 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
                 }
             }
         } catch (const std::exception& e) {
-            DEBUG_LOG("ChatForm: JSON parsing failed: " + std::string(e.what()));
+            // IF PARSING FAILS, it's a plain string message (e.g., "Network connection established").
+            // Handle it gracefully instead of just logging an error.
+            DEBUG_LOG("ChatForm: JSON parsing failed: " + std::string(e.what()) + ". Treating as plain text.");
+
+            // Fall through to the plain text handling logic below.
         } catch (...) {
             DEBUG_LOG("ChatForm: JSON parsing failed with unknown exception");
         }
     }
 
-    // 1. Allocate message data on the heap
+    // 1. Allocate message data on the heap (This now serves as the fallback for non-JSON messages)
     MessageData* data = new MessageData();
     data->sender = StringUtils::to_wstring(sender);
     data->message = StringUtils::to_wstring(message);
 
-    // 2. Post the POINTER to the UI thread
+    // Post to UI thread
     PostMessage(m_hWnd, WM_APP_NEW_MESSAGE, 0, (LPARAM)data);
 }
 
@@ -1179,7 +1177,9 @@ void ChatForm::OnSocketEvent(int eventType, const std::string& data)
             nlohmann::json wrapperMsg = nlohmann::json::parse(jsonPart);
             DEBUG_LOG("ChatForm: Successfully parsed wrapper message JSON");
 
-            if (wrapperMsg.contains("messageId") && wrapperMsg.contains("body") &&
+            // Be specific: this block is for CHAT messages containing an inner JSON body.
+            if (wrapperMsg.contains("type") && wrapperMsg["type"] == "CHAT" &&
+                wrapperMsg.contains("messageId") && wrapperMsg.contains("body") &&
                 wrapperMsg.contains("senderId")) {
 
                 std::string wrapperMessageId = wrapperMsg["messageId"];
@@ -1189,32 +1189,37 @@ void ChatForm::OnSocketEvent(int eventType, const std::string& data)
                 DEBUG_LOG("ChatForm: Wrapper message ID: " + wrapperMessageId + ", senderId: " + senderId);
 
                 // Parse the inner message to get the original message ID
-                nlohmann::json innerMsg = nlohmann::json::parse(body);
-                DEBUG_LOG("ChatForm: Successfully parsed inner message JSON");
+                if (true) { // This block is now only for CHAT messages
+                    // Parse the inner message to get the original message ID
+                    nlohmann::json innerMsg = nlohmann::json::parse(body);
+                    DEBUG_LOG("ChatForm: Successfully parsed inner message JSON");
 
-                if (innerMsg.contains("messageId") && innerMsg.contains("senderId") &&
-                    innerMsg["senderId"] == "You") {
+                    if (innerMsg.contains("messageId") && innerMsg.contains("senderId") &&
+                        innerMsg["senderId"] == "You") {
 
-                    std::string originalMessageId = innerMsg["messageId"];
-                    DEBUG_LOG("ChatForm: Message sent - Original ID: " + originalMessageId + ", Wrapper ID: " + wrapperMessageId);
+                        std::string originalMessageId = innerMsg["messageId"];
+                        DEBUG_LOG("ChatForm: Message sent - Original ID: " + originalMessageId + ", Wrapper ID: " + wrapperMessageId);
 
-                    // Update the message tracking to use the wrapper message ID
-                    // Find the message in our chat messages and update its ID
-                    for (auto& chatMsg : m_chatMessages) {
-                        if (chatMsg.messageId == originalMessageId && chatMsg.isOwnMessage) {
-                            chatMsg.messageId = wrapperMessageId; // Update to wrapper ID
-                            DEBUG_LOG("ChatForm: Updated message ID from " + originalMessageId + " to " + wrapperMessageId);
-                            break;
+                        // Update the message tracking to use the wrapper message ID
+                        // Find the message in our chat messages and update its ID
+                        for (auto& chatMsg : m_chatMessages) {
+                            if (chatMsg.messageId == originalMessageId && chatMsg.isOwnMessage) {
+                                chatMsg.messageId = wrapperMessageId; // Update to wrapper ID
+                                DEBUG_LOG("ChatForm: Updated message ID from " + originalMessageId + " to " + wrapperMessageId);
+                                break;
+                            }
                         }
-                    }
 
-                    // Also update the MessageTracker
-                    Message msg("You", innerMsg["body"]);
-                    msg.messageId = wrapperMessageId;
-                    m_messageTracker->trackMessage(msg);
-                    DEBUG_LOG("ChatForm: Tracking wrapper message with ID: " + wrapperMessageId);
+                        // Also update the MessageTracker
+                        Message msg("You", innerMsg["body"]);
+                        msg.messageId = wrapperMessageId;
+                        m_messageTracker->trackMessage(msg);
+                        DEBUG_LOG("ChatForm: Tracking wrapper message with ID: " + wrapperMessageId);
+                    } else {
+                        DEBUG_LOG("ChatForm: Inner message doesn't match expected format or sender");
+                    }
                 } else {
-                    DEBUG_LOG("ChatForm: Inner message doesn't match expected format or sender");
+                    DEBUG_LOG("ChatForm: Non-CHAT message, skipping inner JSON parsing");
                 }
             } else if (wrapperMsg.contains("type") && wrapperMsg["type"] == "ACK") {
                 // This is an ACK message - process it directly
