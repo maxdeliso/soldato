@@ -2,38 +2,22 @@
 #include <random>
 #include <sstream>
 #include <iomanip>
+#include <rpc.h>
+#pragma comment(lib, "rpcrt4.lib")
 
-// Generate a simple UUID-like string (for compatibility with Teflon)
+// Generate a proper UUID using Windows RPC
 std::string Message::generateUUID() {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_int_distribution<> dis(0, 15);
-    static std::uniform_int_distribution<> dis2(8, 11);
+    UUID uuid;
+    UuidCreate(&uuid);
 
-    std::stringstream ss;
-    int i;
-    ss << std::hex;
-    for (i = 0; i < 8; i++) {
-        ss << dis(gen);
-    }
-    ss << "-";
-    for (i = 0; i < 4; i++) {
-        ss << dis(gen);
-    }
-    ss << "-4";
-    for (i = 0; i < 3; i++) {
-        ss << dis(gen);
-    }
-    ss << "-";
-    ss << dis2(gen);
-    for (i = 0; i < 3; i++) {
-        ss << dis(gen);
-    }
-    ss << "-";
-    for (i = 0; i < 12; i++) {
-        ss << dis(gen);
-    }
-    return ss.str();
+    // Convert UUID to string
+    RPC_CSTR uuidString;
+    UuidToStringA(&uuid, &uuidString);
+
+    std::string result(reinterpret_cast<char*>(uuidString));
+    RpcStringFreeA(&uuidString);
+
+    return result;
 }
 
 // Calculate CRC32 checksum for message body (matching Java's CRC32)

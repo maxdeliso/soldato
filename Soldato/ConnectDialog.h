@@ -33,6 +33,7 @@ public:
 
     bool Show() const;
     void Hide() const;
+    HWND GetHandle() const { return m_hWnd; }
 
     std::string GetMulticastIP() const;
     int GetPort() const;

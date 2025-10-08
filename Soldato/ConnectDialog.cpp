@@ -52,8 +52,7 @@ INT_PTR CALLBACK ConnectDialog::DialogProc(HWND hWnd, UINT message, WPARAM wPara
 
     if (pThis)
     {
-        pThis->HandleMessage(message, wParam, lParam);
-        return TRUE;
+        return pThis->HandleMessage(message, wParam, lParam);
     }
 
     return FALSE;
@@ -77,17 +76,18 @@ LRESULT ConnectDialog::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
         }
-        break;
+        // WM_COMMAND is fully handled for dialog, return TRUE
+        return TRUE;
 
     case WM_CLOSE:
         Hide();
-        break;
+        // WM_CLOSE is fully handled for dialog, return TRUE
+        return TRUE;
 
     default:
+        // For dialogs, return FALSE to let the system handle the message
         return FALSE;
     }
-
-    return TRUE;
 }
 
 void ConnectDialog::InitializeControls()

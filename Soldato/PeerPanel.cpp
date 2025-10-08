@@ -2,6 +2,7 @@
 #include "PeerPanel.h"
 #include "Resource.h"
 #include "StringUtils.h"
+#include "DebugUtils.h"
 #include <sstream>
 #include <iomanip>
 #include <ctime>
@@ -14,12 +15,16 @@
 #define LB_SETTEXTCOLOR 0x0193
 #endif
 
-// Control IDs
-#define ID_PEER_LIST    2001
-#define ID_PEER_COUNT   2002
+// Control IDs - using enum class for type safety
+enum class PeerControlId {
+    PeerList = 2001,
+    PeerCount = 2002
+};
 
 PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
-    : m_hParent(parent), m_hWnd(nullptr), m_hPeerList(nullptr), m_hPeerCountLabel(nullptr), m_hFont(nullptr), m_hInstance(hInstance) {
+    : m_hParent(parent), m_hWnd(nullptr), m_hPeerList(nullptr), m_hPeerCountLabel(nullptr), m_hFont(nullptr), m_hBkgBrush(nullptr), m_hInstance(hInstance) {
+
+    DEBUG_LOG("PeerPanel: Constructor started\n");
 
     // Register the peer panel window class
     WNDCLASSEXW wcex = {};
@@ -31,12 +36,14 @@ PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
     wcex.hInstance = m_hInstance;
     wcex.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SOLDATO));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground = CreateSolidBrush(RGB(0, 15, 0)); // Dark green background
+    m_hBkgBrush = CreateSolidBrush(RGB(0, 15, 0)); // Dark green background
+    wcex.hbrBackground = m_hBkgBrush;
     wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = L"PeerPanelClass";
     wcex.hIconSm = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
     RegisterClassExW(&wcex);
+    DEBUG_LOG("PeerPanel: Window class registered\n");
 
     // Create the peer panel window
     m_hWnd = CreateWindowExW(
@@ -52,13 +59,22 @@ PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
     );
 
     if (m_hWnd) {
+        DEBUG_LOG("PeerPanel: Window created, initializing controls\n");
         InitializeControls();
+        DEBUG_LOG("PeerPanel: Controls initialized\n");
+    } else {
+        DEBUG_LOG("PeerPanel: ERROR - Window creation failed\n");
     }
+
+    DEBUG_LOG("PeerPanel: Constructor completed\n");
 }
 
 PeerPanel::~PeerPanel() {
     if (m_hFont) {
         DeleteObject(m_hFont); // Clean up the GDI resource
+    }
+    if (m_hBkgBrush) {
+        DeleteObject(m_hBkgBrush); // Clean up the GDI resource
     }
     if (m_hWnd) {
         DestroyWindow(m_hWnd);
@@ -87,6 +103,7 @@ LRESULT CALLBACK PeerPanel::PeerPanelProc(HWND hWnd, UINT message, WPARAM wParam
 LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_CREATE:
+        // WM_CREATE is fully handled, we can return 0
         return 0;
 
     case WM_SIZE:
@@ -100,7 +117,7 @@ LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             // Resize peer list
             SetWindowPos(m_hPeerList, nullptr, 10, 40, width - 20, height - 50, SWP_NOZORDER);
         }
-        break;
+        // Let this fall through to DefWindowProc for proper child control management
 
     case WM_PAINT:
         {
@@ -132,16 +149,19 @@ LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
 
             EndPaint(m_hWnd, &ps);
         }
-        break;
-
-    default:
-        return DefWindowProc(m_hWnd, message, wParam, lParam);
+        // For WM_PAINT, returning 0 is acceptable after BeginPaint/EndPaint,
+        // but allowing it to fall through is also safe and simpler
+        return 0;
     }
 
-    return 0;
+    // Any message not handled above (including WM_SIZE now)
+    // MUST be passed to the default window procedure
+    return DefWindowProc(m_hWnd, message, wParam, lParam);
 }
 
 void PeerPanel::InitializeControls() {
+    DEBUG_LOG("PeerPanel: InitializeControls started\n");
+
     // Create peer count label
     m_hPeerCountLabel = CreateWindowExW(
         0,
@@ -150,7 +170,7 @@ void PeerPanel::InitializeControls() {
         WS_CHILD | WS_VISIBLE | SS_CENTER,
         10, 10, 280, 25,
         m_hWnd,
-        (HMENU)ID_PEER_COUNT,
+        (HMENU)static_cast<int>(PeerControlId::PeerCount),
         m_hInstance,
         nullptr
     );
@@ -171,7 +191,7 @@ void PeerPanel::InitializeControls() {
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER | LBS_NOTIFY,
         10, 40, 280, 350,
         m_hWnd,
-        (HMENU)ID_PEER_LIST,
+        (HMENU)static_cast<int>(PeerControlId::PeerList),
         m_hInstance,
         nullptr
     );
@@ -184,7 +204,9 @@ void PeerPanel::InitializeControls() {
     SendMessage(m_hPeerList, LB_SETTEXTCOLOR, 0, RGB(0, 255, 0)); // Bright green text
 
     // Initial state
+    DEBUG_LOG("PeerPanel: About to call UpdatePeerCount\n");
     UpdatePeerCount();
+    DEBUG_LOG("PeerPanel: UpdatePeerCount completed\n");
 }
 
 bool PeerPanel::Show() const {

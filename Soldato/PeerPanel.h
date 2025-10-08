@@ -20,6 +20,7 @@ private:
     HWND m_hPeerCountLabel;
     HWND m_hParent;
     HFONT m_hFont; // Member variable for the font
+    HBRUSH m_hBkgBrush; // Member variable for the background brush
     HINSTANCE m_hInstance;
 
     std::vector<std::wstring> m_peerEntries;
