@@ -24,6 +24,30 @@ enum class ControlId {
 // Custom message for Enter key
 #define WM_SEND_MESSAGE    (WM_USER + 1)
 
+// Cyberpunk theme constants
+namespace CyberpunkTheme {
+    constexpr COLORREF BACKGROUND_COLOR = RGB(0, 20, 0);     // Dark green-black
+    constexpr COLORREF GRID_COLOR = RGB(0, 255, 0);          // Bright green
+    constexpr COLORREF BRACKET_COLOR = RGB(0, 255, 0);       // Bright green
+    constexpr int GRID_SPACING = 20;                         // Grid line spacing
+    constexpr int BRACKET_SIZE = 15;                         // Corner bracket size
+    constexpr int BRACKET_OFFSET = 10;                       // Distance from window edge
+
+    // Pre-calculated subtraction constants for bracket positioning
+    constexpr int BRACKET_END_X = BRACKET_OFFSET + BRACKET_SIZE;     // offset + size
+    constexpr int BRACKET_END_Y = BRACKET_OFFSET + BRACKET_SIZE;     // offset + size
+
+    // Pre-calculated bracket corner positions (relative to window edges)
+    constexpr int TOP_LEFT_X = BRACKET_OFFSET;                       // Top-left X position
+    constexpr int TOP_LEFT_Y = BRACKET_OFFSET;                       // Top-left Y position
+    constexpr int TOP_RIGHT_X = BRACKET_OFFSET;                      // Top-right X offset from right edge
+    constexpr int TOP_RIGHT_Y = BRACKET_OFFSET;                      // Top-right Y position
+    constexpr int BOTTOM_LEFT_X = BRACKET_OFFSET;                    // Bottom-left X position
+    constexpr int BOTTOM_LEFT_Y = BRACKET_OFFSET;                    // Bottom-left Y offset from bottom edge
+    constexpr int BOTTOM_RIGHT_X = BRACKET_OFFSET;                   // Bottom-right X offset from right edge
+    constexpr int BOTTOM_RIGHT_Y = BRACKET_OFFSET;                   // Bottom-right Y offset from bottom edge
+}
+
 // Subclass procedure for message input
 LRESULT CALLBACK MessageInputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -370,57 +394,60 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(m_hWnd, &ps);
 
-            // Cyberpunk background
+            // Get client rect only when needed
             RECT clientRect;
             GetClientRect(m_hWnd, &clientRect);
 
-            // Create gradient brush for cyberpunk background
-            HBRUSH darkBrush = CreateSolidBrush(RGB(0, 20, 0)); // Dark green-black
+            // Create and use background brush
+            HBRUSH darkBrush = CreateSolidBrush(CyberpunkTheme::BACKGROUND_COLOR);
             FillRect(hdc, &clientRect, darkBrush);
             DeleteObject(darkBrush);
 
-            // Add cyberpunk grid lines
-            HPEN neonPen = CreatePen(PS_SOLID, 1, RGB(0, 255, 0)); // Bright green
+            // Create and select pen for grid and brackets
+            HPEN neonPen = CreatePen(PS_SOLID, 1, CyberpunkTheme::GRID_COLOR);
             HPEN oldPen = (HPEN)SelectObject(hdc, neonPen);
 
             // Draw grid pattern
-            for (int x = 0; x < clientRect.right; x += 20)
+            for (int x = 0; x < clientRect.right; x += CyberpunkTheme::GRID_SPACING)
             {
                 MoveToEx(hdc, x, 0, nullptr);
                 LineTo(hdc, x, clientRect.bottom);
             }
-            for (int y = 0; y < clientRect.bottom; y += 20)
+            for (int y = 0; y < clientRect.bottom; y += CyberpunkTheme::GRID_SPACING)
             {
                 MoveToEx(hdc, 0, y, nullptr);
                 LineTo(hdc, clientRect.right, y);
             }
 
-            // Add corner brackets
-            int bracketSize = 15;
+            // Draw corner brackets using pre-calculated constants
+            const int endX = CyberpunkTheme::BRACKET_END_X;
+            const int endY = CyberpunkTheme::BRACKET_END_Y;
+
             // Top-left
-            MoveToEx(hdc, 10, 10, nullptr);
-            LineTo(hdc, 10 + bracketSize, 10);
-            MoveToEx(hdc, 10, 10, nullptr);
-            LineTo(hdc, 10, 10 + bracketSize);
+            MoveToEx(hdc, CyberpunkTheme::TOP_LEFT_X, CyberpunkTheme::TOP_LEFT_Y, nullptr);
+            LineTo(hdc, endX, CyberpunkTheme::TOP_LEFT_Y);
+            MoveToEx(hdc, CyberpunkTheme::TOP_LEFT_X, CyberpunkTheme::TOP_LEFT_Y, nullptr);
+            LineTo(hdc, CyberpunkTheme::TOP_LEFT_X, endY);
 
             // Top-right
-            MoveToEx(hdc, clientRect.right - 10, 10, nullptr);
-            LineTo(hdc, clientRect.right - 10 - bracketSize, 10);
-            MoveToEx(hdc, clientRect.right - 10, 10, nullptr);
-            LineTo(hdc, clientRect.right - 10, 10 + bracketSize);
+            MoveToEx(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, CyberpunkTheme::TOP_RIGHT_Y, nullptr);
+            LineTo(hdc, clientRect.right - endX, CyberpunkTheme::TOP_RIGHT_Y);
+            MoveToEx(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, CyberpunkTheme::TOP_RIGHT_Y, nullptr);
+            LineTo(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, endY);
 
             // Bottom-left
-            MoveToEx(hdc, 10, clientRect.bottom - 10, nullptr);
-            LineTo(hdc, 10 + bracketSize, clientRect.bottom - 10);
-            MoveToEx(hdc, 10, clientRect.bottom - 10, nullptr);
-            LineTo(hdc, 10, clientRect.bottom - 10 - bracketSize);
+            MoveToEx(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y, nullptr);
+            LineTo(hdc, endX, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y);
+            MoveToEx(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y, nullptr);
+            LineTo(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - endY);
 
             // Bottom-right
-            MoveToEx(hdc, clientRect.right - 10, clientRect.bottom - 10, nullptr);
-            LineTo(hdc, clientRect.right - 10 - bracketSize, clientRect.bottom - 10);
-            MoveToEx(hdc, clientRect.right - 10, clientRect.bottom - 10, nullptr);
-            LineTo(hdc, clientRect.right - 10, clientRect.bottom - 10 - bracketSize);
+            MoveToEx(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y, nullptr);
+            LineTo(hdc, clientRect.right - endX, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y);
+            MoveToEx(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y, nullptr);
+            LineTo(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - endY);
 
+            // Restore original pen and cleanup
             SelectObject(hdc, oldPen);
             DeleteObject(neonPen);
 
