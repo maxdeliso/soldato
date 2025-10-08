@@ -116,7 +116,7 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd
 
     if (m_hWnd)
     {
-        DEBUG_LOG("ChatForm: Window created successfully\n");
+        DEBUG_LOG("ChatForm: Window created successfully");
         CenterWindow();
 
         // Show window first to ensure proper sizing
@@ -132,7 +132,7 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd
 
         // Initialize network manager
         m_networkManager = &NetworkManager::GetInstance();
-        OutputDebugStringA("ChatForm: NetworkManager instance obtained\n");
+        DEBUG_LOG("ChatForm: NetworkManager instance obtained");
         m_networkManager->SetNotificationWindow(m_hWnd);
         m_networkManager->SetMessageCallback([this](const std::string& sender, const std::string& message) {
             this->OnNetworkMessage(sender, message);
@@ -152,9 +152,9 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd
         }, m_hInstance);
 
         // Create peer panel
-        OutputDebugStringA("ChatForm: About to create PeerPanel\n");
+        DEBUG_LOG("ChatForm: About to create PeerPanel");
         m_peerPanel = std::make_unique<PeerPanel>(m_hWnd, m_hInstance);
-        OutputDebugStringA("ChatForm: PeerPanel created successfully\n");
+        DEBUG_LOG("ChatForm: PeerPanel created successfully");
 
         // Set initial layout for peer panel
         RECT clientRect;
@@ -229,14 +229,14 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
     // Debug: Log important messages
     if (message == WM_COMMAND || message == WM_CLOSE || message == WM_DESTROY || message == WM_SIZE) {
         char debugMsg[256];
-        sprintf_s(debugMsg, "ChatForm: Received message 0x%04X\n", message);
-        OutputDebugStringA(debugMsg);
+        sprintf_s(debugMsg, "ChatForm: Received message 0x%04X", message);
+        DEBUG_LOG(debugMsg);
     }
 
     switch (message)
     {
     case WM_CREATE:
-        OutputDebugStringA("ChatForm: WM_CREATE received\n");
+        DEBUG_LOG("ChatForm: WM_CREATE received");
         return 0;
 
 
@@ -249,14 +249,14 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         else if (wParam == VK_F1)
         {
             // Test: Manually trigger send message
-            OutputDebugStringA("ChatForm: F1 pressed - manually triggering send\n");
-            AddChatMessage(L"DEBUG", L"F1 TEST MESSAGE");
+            DEBUG_LOG("ChatForm: F1 pressed - manually triggering send");
+            AddChatMessage(L"System", L"Test message sent");
             return 0;
         }
         break;
 
     case WM_SEND_MESSAGE:
-        AddChatMessage(L"DEBUG", L"WM_SEND_MESSAGE RECEIVED (Enter key)");
+        DEBUG_LOG("ChatForm: WM_SEND_MESSAGE received (Enter key)");
         SendChatMessage();
         break;
 
@@ -278,7 +278,20 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         {
             // This is EXECUTED on the UI Thread
             MessageData* data = (MessageData*)lParam;
-            AddChatMessage(data->sender, data->message);
+
+            // Filter out system messages that should be debug logs
+            std::wstring sender = data->sender;
+            std::wstring message = data->message;
+
+            if (sender == L"System") {
+                // Convert system messages to debug logs
+                std::string debugMsg = "NetworkManager: " + std::string(message.begin(), message.end());
+                DEBUG_LOG(debugMsg);
+            } else {
+                // Only show actual user messages in chat
+                AddChatMessage(sender, message);
+            }
+
             UpdatePeerDisplay();
             delete data; // Clean up the heap memory
             return 0;
@@ -288,7 +301,19 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         {
             // This is EXECUTED on the UI Thread
             SystemEventData* data = (SystemEventData*)lParam;
-            AddChatMessage(L"System", data->data);
+
+            // Only show important system messages in chat, log others as debug
+            if (data->eventType == 1 || data->eventType == 3) {
+                // Event type 1: Connection established
+                // Event type 3: Socket closed by remote
+                AddChatMessage(L"System", data->data);
+            } else {
+                // All other system events are debug information
+                std::string debugMsg = "NetworkManager: Event " + std::to_string(data->eventType) + " - " +
+                                     std::string(data->data.begin(), data->data.end());
+                DEBUG_LOG(debugMsg);
+            }
+
             UpdatePeerDisplay();
             UpdateConnectionUI(); // Update UI state based on connection
             delete data; // Clean up the heap memory
@@ -301,50 +326,49 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             int wmEvent = HIWORD(wParam);
 
             char debugMsg[256];
-            sprintf_s(debugMsg, "ChatForm: WM_COMMAND received - ID: %d, Event: %d\n", wmId, wmEvent);
-            OutputDebugStringA(debugMsg);
+            sprintf_s(debugMsg, "ChatForm: WM_COMMAND received - ID: %d, Event: %d", wmId, wmEvent);
+            DEBUG_LOG(debugMsg);
 
             switch (wmId)
             {
             case static_cast<int>(ControlId::SendButton):
-                OutputDebugStringA("ChatForm: ID_SEND_BUTTON clicked\n");
-                AddChatMessage(L"DEBUG", L"SEND BUTTON CLICKED");
+                DEBUG_LOG("ChatForm: Send button clicked");
                 SendChatMessage();
                 break;
             case static_cast<int>(ControlId::ChatHistory):
-                OutputDebugStringA("ChatForm: ID_CHAT_HISTORY notification received\n");
+                DEBUG_LOG("ChatForm: Chat history notification received");
                 // Handle chat history control notifications if needed
                 break;
             case static_cast<int>(ControlId::MessageInput):
-                OutputDebugStringA("ChatForm: ID_MESSAGE_INPUT notification received\n");
+                DEBUG_LOG("ChatForm: Message input notification received");
                 // Handle message input control notifications if needed
                 if (wmEvent == EN_CHANGE) {
-                    OutputDebugStringA("ChatForm: Message input text changed\n");
+                    DEBUG_LOG("ChatForm: Message input text changed");
                 }
                 break;
             case IDM_ABOUT:
-                OutputDebugStringA("ChatForm: IDM_ABOUT clicked\n");
+                DEBUG_LOG("ChatForm: About menu clicked");
                 OnAbout();
                 break;
             case IDM_CONNECT:
-                OutputDebugStringA("ChatForm: IDM_CONNECT clicked\n");
+                DEBUG_LOG("ChatForm: Connect menu clicked");
                 OnConnect();
                 break;
             case IDM_DISCONNECT:
-                OutputDebugStringA("ChatForm: IDM_DISCONNECT clicked\n");
+                DEBUG_LOG("ChatForm: Disconnect menu clicked");
                 OnDisconnect();
                 break;
             case IDM_REFRESH:
-                OutputDebugStringA("ChatForm: IDM_REFRESH clicked\n");
+                DEBUG_LOG("ChatForm: Refresh menu clicked");
                 UpdateConnectionUI();
                 break;
             case IDM_EXIT:
-                OutputDebugStringA("ChatForm: IDM_EXIT clicked\n");
+                DEBUG_LOG("ChatForm: Exit menu clicked");
                 PostQuitMessage(0);
                 break;
             default:
-                sprintf_s(debugMsg, "ChatForm: Unknown WM_COMMAND ID: %d (0x%04X)\n", wmId, wmId);
-                OutputDebugStringA(debugMsg);
+                sprintf_s(debugMsg, "ChatForm: Unknown WM_COMMAND ID: %d (0x%04X)", wmId, wmId);
+                DEBUG_LOG(debugMsg);
                 break;
             }
         }
@@ -380,8 +404,8 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             int x = LOWORD(lParam);
             int y = HIWORD(lParam);
             char debugMsg[256];
-            sprintf_s(debugMsg, "ChatForm: Left mouse button clicked at (%d, %d)\n", x, y);
-            OutputDebugStringA(debugMsg);
+            sprintf_s(debugMsg, "ChatForm: Left mouse button clicked at (%d, %d)", x, y);
+            DEBUG_LOG(debugMsg);
         }
         break;
 
@@ -456,12 +480,12 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         break;
 
     case WM_CLOSE:
-        OutputDebugStringA("ChatForm: WM_CLOSE received\n");
+        DEBUG_LOG("ChatForm: WM_CLOSE received");
         DestroyWindow(m_hWnd);
         return 0;
 
     case WM_DESTROY:
-        OutputDebugStringA("ChatForm: WM_DESTROY received - posting quit message\n");
+        DEBUG_LOG("ChatForm: WM_DESTROY received - posting quit message");
         PostQuitMessage(0);
         return 0;
     }
@@ -473,7 +497,7 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 
 void ChatForm::InitializeControls()
 {
-    OutputDebugStringA("ChatForm: InitializeControls() called\n");
+    DEBUG_LOG("ChatForm: InitializeControls() called");
 
     // Get initial window size for proper layout
     RECT clientRect;
@@ -482,14 +506,14 @@ void ChatForm::InitializeControls()
     int height = clientRect.bottom - clientRect.top;
 
     char debugMsg[256];
-    sprintf_s(debugMsg, "ChatForm: Window size - Width: %d, Height: %d\n", width, height);
-    OutputDebugStringA(debugMsg);
+    sprintf_s(debugMsg, "ChatForm: Window size - Width: %d, Height: %d", width, height);
+    DEBUG_LOG(debugMsg);
 
     // Calculate split layout: chat on left (70%), peer panel on right (30%)
     int chatWidth = static_cast<int>(width * 0.7);
 
-    sprintf_s(debugMsg, "ChatForm: Calculated chat width: %d\n", chatWidth);
-    OutputDebugStringA(debugMsg);
+    sprintf_s(debugMsg, "ChatForm: Calculated chat width: %d", chatWidth);
+    DEBUG_LOG(debugMsg);
 
     // Create chat history (read-only Rich Edit Control) with cyberpunk styling
     m_hChatHistory = CreateWindowExW(
@@ -505,24 +529,24 @@ void ChatForm::InitializeControls()
     );
 
     if (m_hChatHistory) {
-        OutputDebugStringA("ChatForm: Chat history control created successfully\n");
+        DEBUG_LOG("ChatForm: Chat history control created successfully");
 
         // Debug: Check if control is visible
         if (IsWindowVisible(m_hChatHistory)) {
-            OutputDebugStringA("ChatForm: Chat history is visible\n");
+            DEBUG_LOG("ChatForm: Chat history is visible");
         } else {
-            OutputDebugStringA("ChatForm: WARNING - Chat history is not visible\n");
+            DEBUG_LOG("ChatForm: WARNING - Chat history is not visible");
         }
 
         // Debug: Check control position and size (client coordinates)
         RECT chatRect;
         GetClientRect(m_hChatHistory, &chatRect);
         char debugMsg[256];
-        sprintf_s(debugMsg, "ChatForm: Chat history client rect - Left: %d, Top: %d, Right: %d, Bottom: %d\n",
+        sprintf_s(debugMsg, "ChatForm: Chat history client rect - Left: %d, Top: %d, Right: %d, Bottom: %d",
                  chatRect.left, chatRect.top, chatRect.right, chatRect.bottom);
-        OutputDebugStringA(debugMsg);
+        DEBUG_LOG(debugMsg);
     } else {
-        OutputDebugStringA("ChatForm: ERROR - Failed to create chat history control\n");
+        DEBUG_LOG("ChatForm: ERROR - Failed to create chat history control");
     }
 
 
@@ -552,24 +576,24 @@ void ChatForm::InitializeControls()
     );
 
     if (m_hMessageInput) {
-        OutputDebugStringA("ChatForm: Message input control created successfully\n");
+        DEBUG_LOG("ChatForm: Message input control created successfully");
 
         // Debug: Check if control is visible
         if (IsWindowVisible(m_hMessageInput)) {
-            OutputDebugStringA("ChatForm: Message input is visible\n");
+            DEBUG_LOG("ChatForm: Message input is visible");
         } else {
-            OutputDebugStringA("ChatForm: WARNING - Message input is not visible\n");
+            DEBUG_LOG("ChatForm: WARNING - Message input is not visible");
         }
 
         // Debug: Check control position and size (client coordinates)
         RECT inputRect;
         GetClientRect(m_hMessageInput, &inputRect);
         char debugMsg[256];
-        sprintf_s(debugMsg, "ChatForm: Message input client rect - Left: %d, Top: %d, Right: %d, Bottom: %d\n",
+        sprintf_s(debugMsg, "ChatForm: Message input client rect - Left: %d, Top: %d, Right: %d, Bottom: %d",
                  inputRect.left, inputRect.top, inputRect.right, inputRect.bottom);
-        OutputDebugStringA(debugMsg);
+        DEBUG_LOG(debugMsg);
     } else {
-        OutputDebugStringA("ChatForm: ERROR - Failed to create message input control\n");
+        DEBUG_LOG("ChatForm: ERROR - Failed to create message input control");
     }
 
     // Set font for message input
@@ -588,9 +612,9 @@ void ChatForm::InitializeControls()
     int buttonWidth = 70;
     int buttonHeight = 25;
 
-    sprintf_s(debugMsg, "ChatForm: Creating send button at (%d, %d) size %dx%d\n",
+    sprintf_s(debugMsg, "ChatForm: Creating send button at (%d, %d) size %dx%d",
               buttonX, buttonY, buttonWidth, buttonHeight);
-    OutputDebugStringA(debugMsg);
+    DEBUG_LOG(debugMsg);
 
     m_hSendButton = CreateWindowExW(
         0,
@@ -605,24 +629,24 @@ void ChatForm::InitializeControls()
     );
 
     if (m_hSendButton) {
-        OutputDebugStringA("ChatForm: Send button control created successfully\n");
+        DEBUG_LOG("ChatForm: Send button control created successfully");
 
         // Debug: Check if control is visible
         if (IsWindowVisible(m_hSendButton)) {
-            OutputDebugStringA("ChatForm: Send button is visible\n");
+            DEBUG_LOG("ChatForm: Send button is visible");
         } else {
-            OutputDebugStringA("ChatForm: WARNING - Send button is not visible\n");
+            DEBUG_LOG("ChatForm: WARNING - Send button is not visible");
         }
 
         // Debug: Check control position and size (client coordinates)
         RECT buttonRect;
         GetClientRect(m_hSendButton, &buttonRect);
         char debugMsg[256];
-        sprintf_s(debugMsg, "ChatForm: Send button client rect - Left: %d, Top: %d, Right: %d, Bottom: %d\n",
+        sprintf_s(debugMsg, "ChatForm: Send button client rect - Left: %d, Top: %d, Right: %d, Bottom: %d",
                  buttonRect.left, buttonRect.top, buttonRect.right, buttonRect.bottom);
-        OutputDebugStringA(debugMsg);
+        DEBUG_LOG(debugMsg);
     } else {
-        OutputDebugStringA("ChatForm: ERROR - Failed to create send button control\n");
+        DEBUG_LOG("ChatForm: ERROR - Failed to create send button control");
     }
 
     // Set font for send button
@@ -641,22 +665,22 @@ void ChatForm::InitializeControls()
     // Set focus to message input
     if (m_hMessageInput) {
         SetFocus(m_hMessageInput);
-        OutputDebugStringA("ChatForm: Initial focus set to message input\n");
+        DEBUG_LOG("ChatForm: Initial focus set to message input");
 
         // Verify the control is enabled and can receive focus
         if (IsWindowEnabled(m_hMessageInput)) {
-            OutputDebugStringA("ChatForm: Message input is enabled\n");
+            DEBUG_LOG("ChatForm: Message input is enabled");
         } else {
-            OutputDebugStringA("ChatForm: WARNING - Message input is disabled\n");
+            DEBUG_LOG("ChatForm: WARNING - Message input is disabled");
         }
 
         if (IsWindowVisible(m_hMessageInput)) {
-            OutputDebugStringA("ChatForm: Message input is visible\n");
+            DEBUG_LOG("ChatForm: Message input is visible");
         } else {
-            OutputDebugStringA("ChatForm: WARNING - Message input is not visible\n");
+            DEBUG_LOG("ChatForm: WARNING - Message input is not visible");
         }
     } else {
-        OutputDebugStringA("ChatForm: ERROR - Cannot set focus, m_hMessageInput is null\n");
+        DEBUG_LOG("ChatForm: ERROR - Cannot set focus, m_hMessageInput is null");
     }
 }
 
@@ -690,7 +714,7 @@ bool ChatForm::Show() const
 {
     if (m_hWnd)
     {
-        OutputDebugStringA("ChatForm: Show() called - showing window\n");
+        DEBUG_LOG("ChatForm: Show() called - showing window");
 
         // Show the window first
         ShowWindow(m_hWnd, SW_SHOW);
@@ -702,27 +726,27 @@ bool ChatForm::Show() const
         // Set focus to message input for immediate user interaction
         if (m_hMessageInput) {
             SetFocus(m_hMessageInput);
-            OutputDebugStringA("ChatForm: Focus set to message input\n");
+            DEBUG_LOG("ChatForm: Focus set to message input");
         } else {
-            OutputDebugStringA("ChatForm: WARNING - m_hMessageInput is null\n");
+            DEBUG_LOG("ChatForm: WARNING - m_hMessageInput is null");
         }
 
         // Debug: Check if window is actually visible and active
         if (IsWindowVisible(m_hWnd)) {
-            OutputDebugStringA("ChatForm: Window is visible\n");
+            DEBUG_LOG("ChatForm: Window is visible");
         } else {
-            OutputDebugStringA("ChatForm: WARNING - Window is not visible\n");
+            DEBUG_LOG("ChatForm: WARNING - Window is not visible");
         }
 
         if (GetForegroundWindow() == m_hWnd) {
-            OutputDebugStringA("ChatForm: Window is in foreground\n");
+            DEBUG_LOG("ChatForm: Window is in foreground");
         } else {
-            OutputDebugStringA("ChatForm: WARNING - Window is not in foreground\n");
+            DEBUG_LOG("ChatForm: WARNING - Window is not in foreground");
         }
 
         return true;
     }
-    OutputDebugStringA("ChatForm: Show() called but m_hWnd is null\n");
+    DEBUG_LOG("ChatForm: Show() called but m_hWnd is null");
     return false;
 }
 
@@ -786,15 +810,15 @@ void ChatForm::SendChatMessage()
         std::string message = StringUtils::to_string(wMessage);
 
         // Debug: Log what we're trying to do
-        AddChatMessage(L"DEBUG", L"SendChatMessage called - checking connection state");
+        DEBUG_LOG("ChatForm: SendChatMessage called - checking connection state");
 
         // Send via network manager (async to avoid blocking UI)
         if (m_networkManager && m_networkManager->IsConnected())
         {
-            AddChatMessage(L"DEBUG", L"Connection confirmed - sending message");
-            AddChatMessage(L"DEBUG", L"Calling SendMessageAsync...");
+            DEBUG_LOG("ChatForm: Connection confirmed - sending message");
+            DEBUG_LOG("ChatForm: Calling SendMessageAsync...");
             m_networkManager->SendMessageAsync(message);
-            AddChatMessage(L"DEBUG", L"SendMessageAsync completed");
+            DEBUG_LOG("ChatForm: SendMessageAsync completed");
 
             // Add to chat history immediately (optimistic UI update)
             AddChatMessage(L"You", buffer);
@@ -803,11 +827,11 @@ void ChatForm::SendChatMessage()
 
             // Ensure send button remains the default button
             SendMessage(m_hSendButton, BM_SETSTYLE, BS_PUSHBUTTON | BS_DEFPUSHBUTTON, TRUE);
-            AddChatMessage(L"DEBUG", L"Send button set as default after message sent");
+            DEBUG_LOG("ChatForm: Send button set as default after message sent");
         }
         else
         {
-            AddChatMessage(L"DEBUG", L"Not connected - showing not connected message");
+            DEBUG_LOG("ChatForm: Not connected - showing not connected message");
             AddChatMessage(L"System", L"Not connected to network");
         }
     }
@@ -852,7 +876,7 @@ void ChatForm::OnConnect()
 
 void ChatForm::OnDisconnect()
 {
-    AddChatMessage(L"DEBUG", L"OnDisconnect called - checking connection state");
+    DEBUG_LOG("ChatForm: OnDisconnect called - checking connection state");
 
     if (m_networkManager && m_networkManager->IsConnected())
     {
@@ -907,14 +931,14 @@ void ChatForm::UpdateConnectionUI()
     if (m_networkManager)
     {
         bool connected = m_networkManager->IsConnected();
-        AddChatMessage(L"DEBUG", L"UpdateConnectionUI called - connected: true");
+        DEBUG_LOG("ChatForm: UpdateConnectionUI called - connected: " + std::string(connected ? "true" : "false"));
 
         // Restore socket callback after reconnecting
         if (connected) {
             m_networkManager->SetSocketEventCallback([this](int eventType, const std::string& data) {
                 this->OnSocketEvent(eventType, data);
             });
-            AddChatMessage(L"DEBUG", L"Socket callback restored after connection");
+            DEBUG_LOG("ChatForm: Socket callback restored after connection");
         }
 
         EnableDisconnectControls(connected);
@@ -922,7 +946,7 @@ void ChatForm::UpdateConnectionUI()
         // Ensure proper button focus when connection state changes
         if (connected) {
             SendMessage(m_hSendButton, BM_SETSTYLE, BS_PUSHBUTTON | BS_DEFPUSHBUTTON, TRUE);
-            AddChatMessage(L"DEBUG", L"Send button set as default after connection");
+            DEBUG_LOG("ChatForm: Send button set as default after connection");
         }
     }
 }
@@ -1002,18 +1026,18 @@ void ChatForm::BringWindowToForeground(HWND hWnd)
 
     // Step 1: Try the simple approach first
     if (SetForegroundWindow(hWnd)) {
-        OutputDebugStringA("ChatForm: SetForegroundWindow succeeded\n");
+        DEBUG_LOG("ChatForm: SetForegroundWindow succeeded");
         return;
     }
 
     // Step 2: If simple approach fails, use FlashWindow to get user's attention
-    OutputDebugStringA("ChatForm: SetForegroundWindow failed, using FlashWindow\n");
+    DEBUG_LOG("ChatForm: SetForegroundWindow failed, using FlashWindow");
     FlashWindow(hWnd, TRUE);
 
     // Step 3: Use the forceful method with AttachThreadInput
     HWND foregroundWnd = GetForegroundWindow();
     if (!foregroundWnd) {
-        OutputDebugStringA("ChatForm: No foreground window, using basic approach\n");
+        DEBUG_LOG("ChatForm: No foreground window, using basic approach");
         BringWindowToTop(hWnd);
         ShowWindow(hWnd, SW_SHOW);
         SetForegroundWindow(hWnd);
@@ -1026,7 +1050,7 @@ void ChatForm::BringWindowToForeground(HWND hWnd)
 
     // If we're not the foreground thread, attach to it
     if (currentThreadId != foregroundThreadId) {
-        OutputDebugStringA("ChatForm: Attaching to foreground thread\n");
+        DEBUG_LOG("ChatForm: Attaching to foreground thread");
         AttachThreadInput(currentThreadId, foregroundThreadId, TRUE);
     }
 
@@ -1037,7 +1061,7 @@ void ChatForm::BringWindowToForeground(HWND hWnd)
 
     // Detach from the foreground thread's input queue (CRITICAL!)
     if (currentThreadId != foregroundThreadId) {
-        OutputDebugStringA("ChatForm: Detaching from foreground thread\n");
+        DEBUG_LOG("ChatForm: Detaching from foreground thread");
         AttachThreadInput(currentThreadId, foregroundThreadId, FALSE);
     }
 
@@ -1045,7 +1069,7 @@ void ChatForm::BringWindowToForeground(HWND hWnd)
     SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
-    OutputDebugStringA("ChatForm: BringWindowToForeground completed\n");
+    DEBUG_LOG("ChatForm: BringWindowToForeground completed");
 }
 
 // Helper function to resolve proper module handle

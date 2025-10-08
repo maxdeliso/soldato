@@ -145,6 +145,7 @@
   <ItemGroup>
     <ClCompile Include="ChatForm.cpp" />
     <ClCompile Include="ConnectDialog.cpp" />
+    <ClCompile Include="DebugUtils.cpp" />
     <ClCompile Include="Message.cpp" />
     <ClCompile Include="MessageTracker.cpp" />
     <ClCompile Include="NetworkManager.cpp" />
