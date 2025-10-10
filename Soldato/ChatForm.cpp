@@ -917,7 +917,7 @@ void ChatForm::AddChatMessage(const std::wstring& sender, const std::wstring& me
         chatMsg.packedColors = PACK_COLORS(RGB(255, 255, 0), RGB(0, 255, 0));        // Yellow/Green for other users
     }
 
-    // Add to our message vector
+    // Add to our message deque
     m_chatMessages.push_back(chatMsg);
 
     // Add item to ListBox (for owner-drawn, we pass empty string)
@@ -1599,7 +1599,7 @@ void ChatForm::DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& mes
 
 void ChatForm::UpdateMessageAckStatus(const std::string& messageId)
 {
-    // Find the message in our vector and update its acknowledgment status
+    // Find the message in our deque and update its acknowledgment status
     for (auto& msg : m_chatMessages) {
         if (msg.messageId == messageId) {
             if (m_networkManager) {

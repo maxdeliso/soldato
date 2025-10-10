@@ -4,6 +4,7 @@
 #include <commctrl.h>
 #include <string>
 #include <vector>
+#include <deque>
 #include <memory>
 #include <unordered_set>
 #include <chrono>
@@ -69,7 +70,7 @@ private:
     HWND m_hParent;
     HINSTANCE m_hInstance;
 
-    std::vector<ChatMessage> m_chatMessages;  // Changed from m_messages to ChatMessage vector
+    std::deque<ChatMessage> m_chatMessages;  // Use deque for pointer stability
     NetworkManager* m_networkManager;
     std::unique_ptr<ConnectDialog> m_connectDialog;
     std::unique_ptr<PeerPanel> m_peerPanel;
