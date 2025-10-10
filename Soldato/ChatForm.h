@@ -12,6 +12,17 @@
 #include "PeerPanel.h"
 #include "MessageTracker.h"
 
+// Color packing macros for efficient storage of two COLORREF values in one uint64_t
+// Pack format: [63:32] = senderColor, [31:0] = messageColor
+#define PACK_COLORS(sender_color, message_color) \
+    (((uint64_t)(sender_color) << 32) | ((uint64_t)(message_color) & 0xFFFFFFFFULL))
+
+#define UNPACK_SENDER_COLOR(packed_colors) \
+    ((COLORREF)((packed_colors) >> 32))
+
+#define UNPACK_MESSAGE_COLOR(packed_colors) \
+    ((COLORREF)((packed_colors) & 0xFFFFFFFFULL))
+
 // Custom messages for network events
 #define WM_APP_PEERS_UPDATED (WM_APP + 1)
 #define WM_APP_STATS_UPDATED (WM_APP + 2)
@@ -35,8 +46,7 @@ struct ChatMessage {
     std::wstring sender;
     std::wstring message;
     std::string messageId;           // For tracking acknowledgments
-    COLORREF senderColor;
-    COLORREF messageColor;
+    uint64_t packedColors;           // Packed senderColor and messageColor for efficiency
     bool isOwnMessage;
     bool hasAck;
     bool hasNack;
@@ -44,7 +54,7 @@ struct ChatMessage {
     std::unordered_set<std::string> acknowledgingParties;
     std::chrono::steady_clock::time_point timestamp;
 
-    ChatMessage() : senderColor(RGB(255, 255, 0)), messageColor(RGB(0, 255, 0)),
+    ChatMessage() : packedColors(PACK_COLORS(RGB(255, 255, 0), RGB(0, 255, 0))),
                    isOwnMessage(false), hasAck(false), hasNack(false), isTimedOut(false),
                    timestamp(std::chrono::steady_clock::now()) {}
 };

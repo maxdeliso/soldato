@@ -906,16 +906,13 @@ void ChatForm::AddChatMessage(const std::wstring& sender, const std::wstring& me
     chatMsg.messageId = messageId.empty() ? Message::generateUUID() : messageId;
     chatMsg.isOwnMessage = (sender == L"You");
 
-    // Set colors based on sender
+    // Set colors based on sender using packed format for efficiency
     if (sender == L"System" || sender == L"SYSTEM") {
-        chatMsg.senderColor = RGB(255, 100, 100);  // Red for system messages
-        chatMsg.messageColor = RGB(255, 150, 150);
+        chatMsg.packedColors = PACK_COLORS(RGB(255, 100, 100), RGB(255, 150, 150));  // Red for system messages
     } else if (sender == L"You") {
-        chatMsg.senderColor = RGB(100, 150, 255);  // Blue for own messages
-        chatMsg.messageColor = RGB(150, 200, 255);
+        chatMsg.packedColors = PACK_COLORS(RGB(100, 150, 255), RGB(150, 200, 255));  // Blue for own messages
     } else {
-        chatMsg.senderColor = RGB(255, 255, 0);    // Yellow for other users
-        chatMsg.messageColor = RGB(0, 255, 0);     // Green for other users
+        chatMsg.packedColors = PACK_COLORS(RGB(255, 255, 0), RGB(0, 255, 0));        // Yellow/Green for other users
     }
 
     // Add to our message vector
@@ -1564,7 +1561,7 @@ void ChatForm::DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& mes
 
     // Draw the sender's name in its color
     std::wstring senderText = L"[" + message.sender + L"]: ";
-    SetTextColor(hdc, message.senderColor);
+    SetTextColor(hdc, UNPACK_SENDER_COLOR(message.packedColors));
     RECT senderRect = rect;
     senderRect.left += 5;
     senderRect.right -= 25; // Leave space for ACK indicator
@@ -1579,7 +1576,7 @@ void ChatForm::DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& mes
     messageRect.left += (senderRect.right - senderRect.left);
     messageRect.right -= 25; // Leave space for ACK indicator
 
-    SetTextColor(hdc, message.messageColor);
+    SetTextColor(hdc, UNPACK_MESSAGE_COLOR(message.packedColors));
     DrawTextW(hdc, message.message.c_str(), -1, &messageRect, DT_WORDBREAK);
 }
 
