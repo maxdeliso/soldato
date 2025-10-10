@@ -70,6 +70,15 @@ private:
     std::thread m_sendWorkerThread;
     std::atomic<bool> m_sendWorkerRunning;
 
+    // Thread-safe message queue for UI notifications (notify-and-pull pattern)
+    struct QueuedMessage {
+        std::string sender;
+        std::string message;
+        QueuedMessage(const std::string& s, const std::string& m) : sender(s), message(m) {}
+    };
+    std::queue<QueuedMessage> m_messageQueue;
+    std::mutex m_messageQueueMutex;
+
     NetworkManager();
     ~NetworkManager();
 
@@ -125,6 +134,9 @@ public:
 
     // UI notification methods
     void SetNotificationWindow(HWND hWnd);
+
+    // Thread-safe message queue access (notify-and-pull pattern)
+    std::vector<QueuedMessage> PopAllMessages();
 
 private:
     MessageCallback m_messageCallback;

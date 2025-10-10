@@ -380,21 +380,8 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         DEBUG_LOG("ChatForm: WM_CREATE received");
         return 0;
 
-
     case WM_KEYDOWN:
-        if (wParam == VK_ESCAPE)
-        {
-            PostQuitMessage(0);
-            return 0;
-        }
-        else if (wParam == VK_F1)
-        {
-            // Test: Manually trigger send message
-            DEBUG_LOG("ChatForm: F1 pressed - manually triggering send");
-            AddChatMessage(L"System", L"Test message sent");
-            return 0;
-        }
-        break;
+        return OnKeyDown(wParam);
 
     case WM_SEND_MESSAGE:
         DEBUG_LOG("ChatForm: WM_SEND_MESSAGE received (Enter key)");
@@ -402,210 +389,26 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         break;
 
     case WM_APP_PEERS_UPDATED:
-        {
-            // Now we're safely on the UI thread
-            auto peers = NetworkManager::GetInstance().GetKnownPeers();
-            m_peerPanel->updatePeers(peers); // Update the panel
-            return 0;
-        }
+        return OnPeersUpdated();
 
     case WM_APP_STATS_UPDATED:
-        {
-            // Handle stats updates if needed
-            return 0;
-        }
-
-    case WM_APP_NEW_MESSAGE:
-        {
-            // This is EXECUTED on the UI Thread
-            MessageData* data = (MessageData*)lParam;
-
-            // Filter out system messages that should be debug logs
-            std::wstring sender = data->sender;
-            std::wstring message = data->message;
-
-            if (sender == L"System") {
-                // Convert system messages to debug logs
-                std::string debugMsg = "NetworkManager: " + std::string(message.begin(), message.end());
-                DEBUG_LOG(debugMsg);
-            } else {
-                // Only show actual user messages in chat
-                AddChatMessage(sender, message);
-            }
-
-            UpdatePeerDisplay();
-            delete data; // Clean up the heap memory
-            return 0;
-        }
+        // Handle stats updates if needed
+        return 0;
 
     case WM_APP_SYSTEM_EVENT:
-        {
-            // This is EXECUTED on the UI Thread
-            SystemEventData* data = (SystemEventData*)lParam;
-
-            // All events reaching this handler are UI-relevant (Connection established or Socket closed)
-            AddChatMessage(L"System", data->data);
-
-            UpdatePeerDisplay();
-            UpdateConnectionUI(); // Update UI state based on connection
-            delete data; // Clean up the heap memory
-            return 0;
-        }
+        return OnSystemEvent(lParam);
 
     case WM_APP_UPDATE_ACK:
-        {
-            DEBUG_LOG("ChatForm: WM_APP_UPDATE_ACK received");
-            // Update only pending message acknowledgment statuses for performance
-            bool needsRedraw = false;
-            if (m_networkManager && !m_pendingMessages.empty()) {
-                // Get the MessageTracker from NetworkManager
-                auto networkTracker = m_networkManager->GetMessageTracker();
-                if (networkTracker) {
-                    // Create a copy of pending messages to iterate over (in case we modify the set)
-                    std::unordered_set<std::string> pendingCopy = m_pendingMessages;
+        return OnUpdateAckStatus();
 
-                    for (const std::string& messageId : pendingCopy) {
-                        // Find the message in our deque
-                        auto msgIt = std::find_if(m_chatMessages.begin(), m_chatMessages.end(),
-                            [&messageId](const ChatMessage& msg) { return msg.messageId == messageId; });
-
-                        if (msgIt != m_chatMessages.end()) {
-                            auto& msg = *msgIt;
-                            auto ackParties = networkTracker->getAcknowledgingParties(msg.messageId);
-                            bool hadAck = msg.hasAck;
-                            bool wasTimedOut = msg.isTimedOut;
-
-                            msg.acknowledgingParties = ackParties;
-                            msg.hasAck = networkTracker->hasAcknowledgment(msg.messageId);
-
-                            // Check for timeout with protection against extreme time jumps
-                            auto now = std::chrono::steady_clock::now();
-                            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - msg.timestamp).count();
-
-                            // Protect against extreme time jumps (e.g., from sleep/hibernate)
-                            // If elapsed time is unreasonably large, treat as timeout but don't spam
-                            constexpr long long MAX_REASONABLE_ELAPSED = 60 * 60; // 1 hour
-                            bool isTimedOut = false;
-
-                            if (elapsed > MAX_REASONABLE_ELAPSED) {
-                                // Extreme time jump - likely from sleep/hibernate
-                                // Mark as timed out but don't trigger excessive redraws
-                                isTimedOut = true;
-                                DEBUG_LOG("ChatForm: Extreme time jump detected (" + std::to_string(elapsed) +
-                                         "s) for message " + msg.messageId + " - treating as timeout");
-                            } else if (elapsed > MessageTracker::MESSAGE_TIMEOUT_SECONDS) {
-                                // Normal timeout
-                                isTimedOut = true;
-                            }
-
-                            msg.isTimedOut = (isTimedOut && !msg.hasAck);
-
-                            if (hadAck != msg.hasAck || wasTimedOut != msg.isTimedOut) {
-                                DEBUG_LOG("ChatForm: Message " + msg.messageId + " status changed - hasAck: " +
-                                         (msg.hasAck ? "true" : "false") + ", isTimedOut: " +
-                                         (msg.isTimedOut ? "true" : "false"));
-                                needsRedraw = true;
-
-                                // Remove from pending set if message is acknowledged or timed out
-                                if (msg.hasAck || msg.isTimedOut) {
-                                    m_pendingMessages.erase(msg.messageId);
-                                    DEBUG_LOG("ChatForm: Removed message " + msg.messageId + " from pending set");
-                                }
-                            }
-                        }
-                    }
-
-                    // Only invalidate if something actually changed
-                    if (needsRedraw && m_hChatListBox) {
-                        DEBUG_LOG("ChatForm: Invalidating ListBox for redraw");
-                        InvalidateRect(m_hChatListBox, nullptr, TRUE);
-                    } else {
-                        DEBUG_LOG("ChatForm: No changes detected, skipping redraw");
-                    }
-                }
-            }
-            return 0;
-        }
+    case WM_APP_NEW_MESSAGES_AVAILABLE:
+        return OnNewMessagesAvailable();
 
     case WM_COMMAND:
-        {
-            int wmId = LOWORD(wParam);
-            int wmEvent = HIWORD(wParam);
-
-            std::ostringstream oss_cmd;
-            oss_cmd << "ChatForm: WM_COMMAND received - ID: " << wmId << ", Event: " << wmEvent;
-            DEBUG_LOG(oss_cmd.str());
-
-            switch (wmId)
-            {
-            case static_cast<int>(ControlId::SendButton):
-                DEBUG_LOG("ChatForm: Send button clicked");
-                SendChatMessage();
-                break;
-            case static_cast<int>(ControlId::ChatHistory):
-                DEBUG_LOG("ChatForm: Chat history notification received");
-                // Handle chat history control notifications if needed
-                break;
-            case static_cast<int>(ControlId::MessageInput):
-                DEBUG_LOG("ChatForm: Message input notification received");
-                // Handle message input control notifications if needed
-                if (wmEvent == EN_CHANGE) {
-                    DEBUG_LOG("ChatForm: Message input text changed");
-                }
-                break;
-            case IDM_ABOUT:
-                DEBUG_LOG("ChatForm: About menu clicked");
-                OnAbout();
-                break;
-            case IDM_CONNECT:
-                DEBUG_LOG("ChatForm: Connect menu clicked");
-                OnConnect();
-                break;
-            case IDM_DISCONNECT:
-                DEBUG_LOG("ChatForm: Disconnect menu clicked");
-                OnDisconnect();
-                break;
-            case IDM_REFRESH:
-                DEBUG_LOG("ChatForm: Refresh menu clicked");
-                UpdateConnectionUI();
-                break;
-            case IDM_EXIT:
-                DEBUG_LOG("ChatForm: Exit menu clicked");
-                PostQuitMessage(0);
-                break;
-            default:
-                std::ostringstream oss_unknown;
-                oss_unknown << "ChatForm: Unknown WM_COMMAND ID: " << wmId << " (0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << wmId << ")";
-                DEBUG_LOG(oss_unknown.str());
-                break;
-            }
-        }
-        return 0; // WM_COMMAND is fully handled, don't pass to DefWindowProc
+        return OnCommand(wParam, lParam);
 
     case WM_SIZE:
-        {
-            int width = LOWORD(lParam);
-            int height = HIWORD(lParam);
-
-            // Calculate split layout: chat on left (70%), peer panel on right (30%)
-            int chatWidth = static_cast<int>(width * 0.7);
-            int peerWidth = width - chatWidth;
-
-            // Resize chat ListBox
-            SetWindowPos(m_hChatListBox, nullptr, 10, 10, chatWidth - 20, height - 80, SWP_NOZORDER);
-
-            // Resize message input
-            SetWindowPos(m_hMessageInput, nullptr, 10, height - 60, chatWidth - 90, 25, SWP_NOZORDER);
-
-            // Move send button
-            SetWindowPos(m_hSendButton, nullptr, chatWidth - 80, height - 60, 70, 25, SWP_NOZORDER);
-
-            // Position peer panel on the right
-            if (m_peerPanel) {
-                SetWindowPos(m_peerPanel->GetHandle(), nullptr, chatWidth, 0, peerWidth, height, SWP_NOZORDER);
-            }
-        }
-        break;
+        return OnSize(wParam, lParam);
 
     case WM_LBUTTONDOWN:
         {
@@ -622,66 +425,7 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         return TRUE;
 
     case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(m_hWnd, &ps);
-
-            // Get client rect only when needed
-            RECT clientRect;
-            GetClientRect(m_hWnd, &clientRect);
-
-            // Use pre-created background brush
-            FillRect(hdc, &clientRect, m_hBackgroundBrush);
-
-            // Use pre-created neon pen for grid and brackets
-            HPEN oldPen = (HPEN)SelectObject(hdc, m_hNeonPen);
-
-            // Draw grid pattern
-            for (int x = 0; x < clientRect.right; x += CyberpunkTheme::GRID_SPACING)
-            {
-                MoveToEx(hdc, x, 0, nullptr);
-                LineTo(hdc, x, clientRect.bottom);
-            }
-            for (int y = 0; y < clientRect.bottom; y += CyberpunkTheme::GRID_SPACING)
-            {
-                MoveToEx(hdc, 0, y, nullptr);
-                LineTo(hdc, clientRect.right, y);
-            }
-
-            // Draw corner brackets using pre-calculated constants
-            const int endX = CyberpunkTheme::BRACKET_END_X;
-            const int endY = CyberpunkTheme::BRACKET_END_Y;
-
-            // Top-left
-            MoveToEx(hdc, CyberpunkTheme::TOP_LEFT_X, CyberpunkTheme::TOP_LEFT_Y, nullptr);
-            LineTo(hdc, endX, CyberpunkTheme::TOP_LEFT_Y);
-            MoveToEx(hdc, CyberpunkTheme::TOP_LEFT_X, CyberpunkTheme::TOP_LEFT_Y, nullptr);
-            LineTo(hdc, CyberpunkTheme::TOP_LEFT_X, endY);
-
-            // Top-right
-            MoveToEx(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, CyberpunkTheme::TOP_RIGHT_Y, nullptr);
-            LineTo(hdc, clientRect.right - endX, CyberpunkTheme::TOP_RIGHT_Y);
-            MoveToEx(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, CyberpunkTheme::TOP_RIGHT_Y, nullptr);
-            LineTo(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, endY);
-
-            // Bottom-left
-            MoveToEx(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y, nullptr);
-            LineTo(hdc, endX, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y);
-            MoveToEx(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y, nullptr);
-            LineTo(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - endY);
-
-            // Bottom-right
-            MoveToEx(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y, nullptr);
-            LineTo(hdc, clientRect.right - endX, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y);
-            MoveToEx(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y, nullptr);
-            LineTo(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - endY);
-
-            // Restore original pen
-            SelectObject(hdc, oldPen);
-
-            EndPaint(m_hWnd, &ps);
-        }
-        break;
+        return OnPaint();
 
     case WM_CLOSE:
         DEBUG_LOG("ChatForm: WM_CLOSE received");
@@ -689,33 +433,13 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         return 0;
 
     case WM_MEASUREITEM:
-        {
-            MEASUREITEMSTRUCT* pMeasureItem = (MEASUREITEMSTRUCT*)lParam;
-            if (pMeasureItem->CtlID == static_cast<int>(ControlId::ChatHistory)) {
-                OnMeasureItem(pMeasureItem);
-                return TRUE;
-            }
-        }
-        break;
+        return OnMeasureItem(lParam);
 
     case WM_DRAWITEM:
-        {
-            DRAWITEMSTRUCT* pDrawItem = (DRAWITEMSTRUCT*)lParam;
-            if (pDrawItem->CtlID == static_cast<int>(ControlId::ChatHistory)) {
-                OnDrawItem(pDrawItem);
-                return TRUE;
-            }
-        }
-        break;
+        return OnDrawItem(lParam);
 
     case WM_TIMER:
-        {
-            // Update acknowledgment statuses periodically
-            if (wParam == 1) { // Our timer ID
-                PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
-            }
-        }
-        break;
+        return OnTimer(wParam);
 
     case WM_DESTROY:
         DEBUG_LOG("ChatForm: WM_DESTROY received - posting quit message");
@@ -726,6 +450,317 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
     // Any message that isn't explicitly handled and returned above
     // should be passed to the default procedure.
     return DefWindowProc(m_hWnd, message, wParam, lParam);
+}
+
+// Refactored message handlers for better code organization
+LRESULT ChatForm::OnCommand(WPARAM wParam, LPARAM lParam)
+{
+    int wmId = LOWORD(wParam);
+    int wmEvent = HIWORD(wParam);
+
+    std::ostringstream oss_cmd;
+    oss_cmd << "ChatForm: WM_COMMAND received - ID: " << wmId << ", Event: " << wmEvent;
+    DEBUG_LOG(oss_cmd.str());
+
+    switch (wmId)
+    {
+    case static_cast<int>(ControlId::SendButton):
+        DEBUG_LOG("ChatForm: Send button clicked");
+        SendChatMessage();
+        break;
+    case static_cast<int>(ControlId::ChatHistory):
+        DEBUG_LOG("ChatForm: Chat history notification received");
+        // Handle chat history control notifications if needed
+        break;
+    case static_cast<int>(ControlId::MessageInput):
+        DEBUG_LOG("ChatForm: Message input notification received");
+        // Handle message input control notifications if needed
+        if (wmEvent == EN_CHANGE) {
+            DEBUG_LOG("ChatForm: Message input text changed");
+        }
+        break;
+    case IDM_ABOUT:
+        DEBUG_LOG("ChatForm: About menu clicked");
+        OnAbout();
+        break;
+    case IDM_CONNECT:
+        DEBUG_LOG("ChatForm: Connect menu clicked");
+        OnConnect();
+        break;
+    case IDM_DISCONNECT:
+        DEBUG_LOG("ChatForm: Disconnect menu clicked");
+        OnDisconnect();
+        break;
+    case IDM_REFRESH:
+        DEBUG_LOG("ChatForm: Refresh menu clicked");
+        UpdateConnectionUI();
+        break;
+    case IDM_EXIT:
+        DEBUG_LOG("ChatForm: Exit menu clicked");
+        PostQuitMessage(0);
+        break;
+    default:
+        std::ostringstream oss_unknown;
+        oss_unknown << "ChatForm: Unknown WM_COMMAND ID: " << wmId << " (0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << wmId << ")";
+        DEBUG_LOG(oss_unknown.str());
+        break;
+    }
+    return 0; // WM_COMMAND is fully handled, don't pass to DefWindowProc
+}
+
+LRESULT ChatForm::OnNewMessagesAvailable()
+{
+    DEBUG_LOG("ChatForm: WM_APP_NEW_MESSAGES_AVAILABLE received");
+    // Safely pull all messages from the NetworkManager queue
+    if (m_networkManager) {
+        auto messages = m_networkManager->PopAllMessages();
+        for (const auto& queuedMsg : messages) {
+            // Filter out system messages that should be debug logs
+            std::wstring sender = StringUtils::to_wstring(queuedMsg.sender);
+            std::wstring message = StringUtils::to_wstring(queuedMsg.message);
+
+            if (sender == L"System") {
+                // Convert system messages to debug logs
+                std::string debugMsg = "NetworkManager: " + queuedMsg.message;
+                DEBUG_LOG(debugMsg);
+            } else {
+                // Only show actual user messages in chat
+                AddChatMessage(sender, message);
+            }
+        }
+        UpdatePeerDisplay();
+    }
+    return 0;
+}
+
+LRESULT ChatForm::OnSystemEvent(LPARAM lParam)
+{
+    // This is EXECUTED on the UI Thread
+    SystemEventData* data = (SystemEventData*)lParam;
+
+    // All events reaching this handler are UI-relevant (Connection established or Socket closed)
+    AddChatMessage(L"System", data->data);
+
+    UpdatePeerDisplay();
+    UpdateConnectionUI(); // Update UI state based on connection
+    delete data; // Clean up the heap memory
+    return 0;
+}
+
+LRESULT ChatForm::OnUpdateAckStatus()
+{
+    DEBUG_LOG("ChatForm: WM_APP_UPDATE_ACK received");
+    // Update only pending message acknowledgment statuses for performance
+    bool needsRedraw = false;
+    if (m_networkManager && !m_pendingMessages.empty()) {
+        // Get the MessageTracker from NetworkManager
+        auto networkTracker = m_networkManager->GetMessageTracker();
+        if (networkTracker) {
+            // Create a copy of pending messages to iterate over (in case we modify the set)
+            std::unordered_set<std::string> pendingCopy = m_pendingMessages;
+
+            for (const std::string& messageId : pendingCopy) {
+                // Find the message in our deque
+                auto msgIt = std::find_if(m_chatMessages.begin(), m_chatMessages.end(),
+                    [&messageId](const ChatMessage& msg) { return msg.messageId == messageId; });
+
+                if (msgIt != m_chatMessages.end()) {
+                    auto& msg = *msgIt;
+                    auto ackParties = networkTracker->getAcknowledgingParties(msg.messageId);
+                    bool hadAck = msg.hasAck;
+                    bool wasTimedOut = msg.isTimedOut;
+
+                    msg.acknowledgingParties = ackParties;
+                    msg.hasAck = networkTracker->hasAcknowledgment(msg.messageId);
+
+                    // Check for timeout with protection against extreme time jumps
+                    auto now = std::chrono::steady_clock::now();
+                    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - msg.timestamp).count();
+
+                    // Protect against extreme time jumps (e.g., from sleep/hibernate)
+                    // If elapsed time is unreasonably large, treat as timeout but don't spam
+                    constexpr long long MAX_REASONABLE_ELAPSED = 60 * 60; // 1 hour
+                    bool isTimedOut = false;
+
+                    if (elapsed > MAX_REASONABLE_ELAPSED) {
+                        // Extreme time jump - likely from sleep/hibernate
+                        // Mark as timed out but don't trigger excessive redraws
+                        isTimedOut = true;
+                        DEBUG_LOG("ChatForm: Extreme time jump detected (" + std::to_string(elapsed) +
+                                 "s) for message " + msg.messageId + " - treating as timeout");
+                    } else if (elapsed > MessageTracker::MESSAGE_TIMEOUT_SECONDS) {
+                        // Normal timeout
+                        isTimedOut = true;
+                    }
+
+                    msg.isTimedOut = (isTimedOut && !msg.hasAck);
+
+                    if (hadAck != msg.hasAck || wasTimedOut != msg.isTimedOut) {
+                        DEBUG_LOG("ChatForm: Message " + msg.messageId + " status changed - hasAck: " +
+                                 (msg.hasAck ? "true" : "false") + ", isTimedOut: " +
+                                 (msg.isTimedOut ? "true" : "false"));
+                        needsRedraw = true;
+
+                        // Remove from pending set if message is acknowledged or timed out
+                        if (msg.hasAck || msg.isTimedOut) {
+                            m_pendingMessages.erase(msg.messageId);
+                            DEBUG_LOG("ChatForm: Removed message " + msg.messageId + " from pending set");
+                        }
+                    }
+                }
+            }
+
+            // Only invalidate if something actually changed
+            if (needsRedraw && m_hChatListBox) {
+                DEBUG_LOG("ChatForm: Invalidating ListBox for redraw");
+                InvalidateRect(m_hChatListBox, nullptr, TRUE);
+            } else {
+                DEBUG_LOG("ChatForm: No changes detected, skipping redraw");
+            }
+        }
+    }
+    return 0;
+}
+
+LRESULT ChatForm::OnPeersUpdated()
+{
+    // Now we're safely on the UI thread
+    auto peers = NetworkManager::GetInstance().GetKnownPeers();
+    m_peerPanel->updatePeers(peers); // Update the panel
+    return 0;
+}
+
+LRESULT ChatForm::OnSize(WPARAM wParam, LPARAM lParam)
+{
+    int width = LOWORD(lParam);
+    int height = HIWORD(lParam);
+
+    // Calculate split layout: chat on left (70%), peer panel on right (30%)
+    int chatWidth = static_cast<int>(width * 0.7);
+    int peerWidth = width - chatWidth;
+
+    // Resize chat ListBox
+    SetWindowPos(m_hChatListBox, nullptr, 10, 10, chatWidth - 20, height - 80, SWP_NOZORDER);
+
+    // Resize message input
+    SetWindowPos(m_hMessageInput, nullptr, 10, height - 60, chatWidth - 90, 25, SWP_NOZORDER);
+
+    // Move send button
+    SetWindowPos(m_hSendButton, nullptr, chatWidth - 80, height - 60, 70, 25, SWP_NOZORDER);
+
+    // Position peer panel on the right
+    if (m_peerPanel) {
+        SetWindowPos(m_peerPanel->GetHandle(), nullptr, chatWidth, 0, peerWidth, height, SWP_NOZORDER);
+    }
+    return 0;
+}
+
+LRESULT ChatForm::OnPaint()
+{
+    PAINTSTRUCT ps;
+    HDC hdc = BeginPaint(m_hWnd, &ps);
+
+    // Get client rect only when needed
+    RECT clientRect;
+    GetClientRect(m_hWnd, &clientRect);
+
+    // Use pre-created background brush
+    FillRect(hdc, &clientRect, m_hBackgroundBrush);
+
+    // Use pre-created neon pen for grid and brackets
+    HPEN oldPen = (HPEN)SelectObject(hdc, m_hNeonPen);
+
+    // Draw grid pattern
+    for (int x = 0; x < clientRect.right; x += CyberpunkTheme::GRID_SPACING)
+    {
+        MoveToEx(hdc, x, 0, nullptr);
+        LineTo(hdc, x, clientRect.bottom);
+    }
+    for (int y = 0; y < clientRect.bottom; y += CyberpunkTheme::GRID_SPACING)
+    {
+        MoveToEx(hdc, 0, y, nullptr);
+        LineTo(hdc, clientRect.right, y);
+    }
+
+    // Draw corner brackets using pre-calculated constants
+    const int endX = CyberpunkTheme::BRACKET_END_X;
+    const int endY = CyberpunkTheme::BRACKET_END_Y;
+
+    // Top-left
+    MoveToEx(hdc, CyberpunkTheme::TOP_LEFT_X, CyberpunkTheme::TOP_LEFT_Y, nullptr);
+    LineTo(hdc, endX, CyberpunkTheme::TOP_LEFT_Y);
+    MoveToEx(hdc, CyberpunkTheme::TOP_LEFT_X, CyberpunkTheme::TOP_LEFT_Y, nullptr);
+    LineTo(hdc, CyberpunkTheme::TOP_LEFT_X, endY);
+
+    // Top-right
+    MoveToEx(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, CyberpunkTheme::TOP_RIGHT_Y, nullptr);
+    LineTo(hdc, clientRect.right - endX, CyberpunkTheme::TOP_RIGHT_Y);
+    MoveToEx(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, CyberpunkTheme::TOP_RIGHT_Y, nullptr);
+    LineTo(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, endY);
+
+    // Bottom-left
+    MoveToEx(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y, nullptr);
+    LineTo(hdc, endX, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y);
+    MoveToEx(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y, nullptr);
+    LineTo(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - endY);
+
+    // Bottom-right
+    MoveToEx(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y, nullptr);
+    LineTo(hdc, clientRect.right - endX, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y);
+    MoveToEx(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y, nullptr);
+    LineTo(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - endY);
+
+    // Restore original pen
+    SelectObject(hdc, oldPen);
+
+    EndPaint(m_hWnd, &ps);
+    return 0;
+}
+
+LRESULT ChatForm::OnTimer(WPARAM wParam)
+{
+    // Update acknowledgment statuses periodically
+    if (wParam == 1) { // Our timer ID
+        PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
+    }
+    return 0;
+}
+
+LRESULT ChatForm::OnKeyDown(WPARAM wParam)
+{
+    if (wParam == VK_ESCAPE)
+    {
+        PostQuitMessage(0);
+        return 0;
+    }
+    else if (wParam == VK_F1)
+    {
+        // Test: Manually trigger send message
+        DEBUG_LOG("ChatForm: F1 pressed - manually triggering send");
+        AddChatMessage(L"System", L"Test message sent");
+        return 0;
+    }
+    return 0;
+}
+
+LRESULT ChatForm::OnMeasureItem(LPARAM lParam)
+{
+    MEASUREITEMSTRUCT* pMeasureItem = (MEASUREITEMSTRUCT*)lParam;
+    if (pMeasureItem->CtlID == static_cast<int>(ControlId::ChatHistory)) {
+        OnMeasureItem(pMeasureItem);
+        return TRUE;
+    }
+    return 0;
+}
+
+LRESULT ChatForm::OnDrawItem(LPARAM lParam)
+{
+    DRAWITEMSTRUCT* pDrawItem = (DRAWITEMSTRUCT*)lParam;
+    if (pDrawItem->CtlID == static_cast<int>(ControlId::ChatHistory)) {
+        OnDrawItem(pDrawItem);
+        return TRUE;
+    }
+    return 0;
 }
 
 void ChatForm::InitializeControls()
@@ -1305,13 +1340,12 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
                         return;
                     }
 
-                    // Create message data for UI thread
-                    MessageData* data = new MessageData();
-                    data->sender = StringUtils::to_wstring(chatMsg.senderId);
-                    data->message = StringUtils::to_wstring(chatMsg.body);
-
-                    // Post to UI thread
-                    PostMessage(m_hWnd, WM_APP_NEW_MESSAGE, 0, (LPARAM)data);
+                    // Queue the message for UI thread processing (notify-and-pull pattern)
+                    if (m_networkManager) {
+                        // Use the NetworkManager's queue instead of direct PostMessage
+                        // This will be handled by the new WM_APP_NEW_MESSAGES_AVAILABLE handler
+                        return;
+                    }
                     return;
                 }
             }
@@ -1319,6 +1353,7 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
             // IF PARSING FAILS, it's a plain string message (e.g., "Network connection established").
             // Handle it gracefully instead of just logging an error.
             DEBUG_LOG("ChatForm: JSON parsing failed: " + std::string(e.what()) + ". Treating as plain text.");
+            (void)e; // Suppress unused variable warning
 
             // Fall through to the plain text handling logic below.
         } catch (...) {
@@ -1326,13 +1361,12 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
         }
     }
 
-    // 1. Allocate message data on the heap (This now serves as the fallback for non-JSON messages)
-    MessageData* data = new MessageData();
-    data->sender = StringUtils::to_wstring(sender);
-    data->message = StringUtils::to_wstring(message);
-
-    // Post to UI thread
-    PostMessage(m_hWnd, WM_APP_NEW_MESSAGE, 0, (LPARAM)data);
+    // Fallback for non-JSON messages - queue for UI thread processing
+    if (m_networkManager) {
+        // Use the NetworkManager's queue instead of direct PostMessage
+        // This will be handled by the new WM_APP_NEW_MESSAGES_AVAILABLE handler
+        return;
+    }
 }
 
 void ChatForm::OnSocketEvent(SocketEventType eventType, const std::string& data)
@@ -1343,73 +1377,7 @@ void ChatForm::OnSocketEvent(SocketEventType eventType, const std::string& data)
 
     // Handle "Raw JSON" event to capture message ID
     if (eventType == SocketEventType::RawJsonReceived && m_networkManager) {
-        DEBUG_LOG("ChatForm: Processing RawJsonReceived event");
-        try {
-            // The data comes as "Raw JSON: {json}" - extract just the JSON part
-            std::string jsonPart = data;
-            DEBUG_LOG("ChatForm: Original data: " + data);
-
-            size_t colonPos = jsonPart.find(": ");
-            if (colonPos != std::string::npos) {
-                jsonPart = jsonPart.substr(colonPos + 2); // Skip "Raw JSON: "
-                DEBUG_LOG("ChatForm: Extracted JSON part: " + jsonPart);
-            }
-
-            nlohmann::json message = nlohmann::json::parse(jsonPart);
-            DEBUG_LOG("ChatForm: Successfully parsed message JSON");
-
-            // Handle CHAT messages - simple flat structure
-            if (message.contains("type") && message["type"] == "CHAT" &&
-                message.contains("messageId") && message.contains("body") &&
-                message.contains("senderId")) {
-
-                std::string messageId = message["messageId"];
-                std::string body = message["body"];
-                std::string senderId = message["senderId"];
-
-                DEBUG_LOG("ChatForm: CHAT message - ID: " + messageId + ", senderId: " + senderId);
-
-                // Don't process our own messages here - they're already in the UI from SendChatMessage()
-                if (senderId == m_networkManager->GetSenderId()) {
-                    DEBUG_LOG("ChatForm: Ignoring own message to prevent duplication: " + messageId);
-                    return; // Exit early to prevent duplicate processing
-                }
-
-                DEBUG_LOG("ChatForm: Processing message from other user: " + senderId);
-            } else if (message.contains("type") && message["type"] == "ACK") {
-                // This is an ACK message - process it directly
-                std::string ackMessageId = message["messageId"];
-                std::string originalMessageId = message["originalMessageId"];
-                std::string ackSenderId = message["senderId"];
-
-                DEBUG_LOG("ChatForm: Processing ACK - Message ID: " + ackMessageId + ", Original ID: " + originalMessageId + ", From: " + ackSenderId);
-
-                // Create ACK message for MessageTracker
-                Message ackMsg;
-                ackMsg.senderId = ackSenderId;
-                ackMsg.messageId = ackMessageId;
-                ackMsg.type = MessageType::ACK;
-                ackMsg.originalMessageId = originalMessageId;
-                ackMsg.body = message["body"];
-
-                // Use NetworkManager's MessageTracker
-                if (m_networkManager) {
-                    auto networkTracker = m_networkManager->GetMessageTracker();
-                    if (networkTracker) {
-                        networkTracker->processAcknowledgment(ackMsg);
-                    }
-                }
-                DEBUG_LOG("ChatForm: Processed ACK for message: " + originalMessageId);
-
-                // Update UI on main thread
-                PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
-                DEBUG_LOG("ChatForm: Posted WM_APP_UPDATE_ACK to UI thread");
-            } else {
-                DEBUG_LOG("ChatForm: Message doesn't contain required fields");
-            }
-        } catch (const std::exception& e) {
-            DEBUG_LOG("ChatForm: Failed to parse message: " + std::string(e.what()));
-        }
+        ProcessRawJsonEvent(data);
     }
 
     // Only send UI events for important system messages (Connection established and Socket closed)
@@ -1426,6 +1394,95 @@ void ChatForm::OnSocketEvent(SocketEventType eventType, const std::string& data)
         std::string debugMsg = "NetworkManager: Event " + std::to_string(static_cast<int>(eventType)) + " - " + data;
         DEBUG_LOG(debugMsg);
     }
+}
+
+void ChatForm::ProcessRawJsonEvent(const std::string& data)
+{
+    DEBUG_LOG("ChatForm: Processing RawJsonReceived event");
+    try {
+        // The data comes as "Raw JSON: {json}" - extract just the JSON part
+        std::string jsonPart = data;
+        DEBUG_LOG("ChatForm: Original data: " + data);
+
+        size_t colonPos = jsonPart.find(": ");
+        if (colonPos != std::string::npos) {
+            jsonPart = jsonPart.substr(colonPos + 2); // Skip "Raw JSON: "
+            DEBUG_LOG("ChatForm: Extracted JSON part: " + jsonPart);
+        }
+
+        nlohmann::json message = nlohmann::json::parse(jsonPart);
+        DEBUG_LOG("ChatForm: Successfully parsed message JSON");
+
+        // Handle different message types
+        if (message.contains("type")) {
+            std::string messageType = message["type"];
+            if (messageType == "CHAT") {
+                ProcessChatMessage(message);
+            } else if (messageType == "ACK") {
+                ProcessAckMessage(message);
+            } else {
+                DEBUG_LOG("ChatForm: Unknown message type: " + messageType);
+            }
+        } else {
+            DEBUG_LOG("ChatForm: Message doesn't contain required fields");
+        }
+    } catch (const std::exception& e) {
+        DEBUG_LOG("ChatForm: Failed to parse message: " + std::string(e.what()));
+        (void)e; // Suppress unused variable warning
+    }
+}
+
+void ChatForm::ProcessChatMessage(const nlohmann::json& message)
+{
+    if (!message.contains("messageId") || !message.contains("body") || !message.contains("senderId")) {
+        DEBUG_LOG("ChatForm: CHAT message missing required fields");
+        return;
+    }
+
+    std::string messageId = message["messageId"];
+    std::string body = message["body"];
+    std::string senderId = message["senderId"];
+
+    DEBUG_LOG("ChatForm: CHAT message - ID: " + messageId + ", senderId: " + senderId);
+
+    // Don't process our own messages here - they're already in the UI from SendChatMessage()
+    if (senderId == m_networkManager->GetSenderId()) {
+        DEBUG_LOG("ChatForm: Ignoring own message to prevent duplication: " + messageId);
+        return; // Exit early to prevent duplicate processing
+    }
+
+    DEBUG_LOG("ChatForm: Processing message from other user: " + senderId);
+}
+
+void ChatForm::ProcessAckMessage(const nlohmann::json& message)
+{
+    // This is an ACK message - process it directly
+    std::string ackMessageId = message["messageId"];
+    std::string originalMessageId = message["originalMessageId"];
+    std::string ackSenderId = message["senderId"];
+
+    DEBUG_LOG("ChatForm: Processing ACK - Message ID: " + ackMessageId + ", Original ID: " + originalMessageId + ", From: " + ackSenderId);
+
+    // Create ACK message for MessageTracker
+    Message ackMsg;
+    ackMsg.senderId = ackSenderId;
+    ackMsg.messageId = ackMessageId;
+    ackMsg.type = MessageType::ACK;
+    ackMsg.originalMessageId = originalMessageId;
+    ackMsg.body = message["body"];
+
+    // Use NetworkManager's MessageTracker
+    if (m_networkManager) {
+        auto networkTracker = m_networkManager->GetMessageTracker();
+        if (networkTracker) {
+            networkTracker->processAcknowledgment(ackMsg);
+        }
+    }
+    DEBUG_LOG("ChatForm: Processed ACK for message: " + originalMessageId);
+
+    // Update UI on main thread
+    PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
+    DEBUG_LOG("ChatForm: Posted WM_APP_UPDATE_ACK to UI thread");
 }
 
 // About dialog procedure

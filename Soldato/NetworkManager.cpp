@@ -757,14 +757,15 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
                 username_copy = m_username;
             }
 
-            // Display the message
-            MessageCallback messageCallback;
+            // Queue the message for UI thread processing (notify-and-pull pattern)
             {
-                std::lock_guard<std::mutex> lock(m_callbackMutex);
-                messageCallback = m_messageCallback;
+                std::lock_guard<std::mutex> lock(m_messageQueueMutex);
+                m_messageQueue.emplace(username_copy, message.body);
             }
-            if (messageCallback) {
-                messageCallback(username_copy, message.body);
+
+            // Notify UI thread that new messages are available
+            if (m_hNotifyWnd) {
+                PostMessage(m_hNotifyWnd, WM_APP_NEW_MESSAGES_AVAILABLE, 0, 0);
             }
 
             SocketEventCallback socketCallback;
@@ -813,4 +814,17 @@ int NetworkManager::GetPeerCount() const
         return m_peerTracker->getPeerCount();
     }
     return 0;
+}
+
+std::vector<NetworkManager::QueuedMessage> NetworkManager::PopAllMessages()
+{
+    std::lock_guard<std::mutex> lock(m_messageQueueMutex);
+    std::vector<QueuedMessage> messages;
+
+    while (!m_messageQueue.empty()) {
+        messages.push_back(m_messageQueue.front());
+        m_messageQueue.pop();
+    }
+
+    return messages;
 }

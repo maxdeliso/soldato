@@ -30,6 +30,7 @@
 #define WM_APP_NEW_MESSAGE   (WM_APP + 3)
 #define WM_APP_SYSTEM_EVENT  (WM_APP + 4)
 #define WM_APP_UPDATE_ACK    (WM_APP + 5)
+#define WM_APP_NEW_MESSAGES_AVAILABLE (WM_APP + 6)
 
 // Helper struct for passing message data between threads
 struct MessageData {
@@ -104,6 +105,24 @@ private:
 
     static LRESULT CALLBACK ChatFormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
+
+    // Refactored message handlers for better code organization
+    LRESULT OnCommand(WPARAM wParam, LPARAM lParam);
+    LRESULT OnNewMessagesAvailable();
+    LRESULT OnSystemEvent(LPARAM lParam);
+    LRESULT OnUpdateAckStatus();
+    LRESULT OnPeersUpdated();
+    LRESULT OnSize(WPARAM wParam, LPARAM lParam);
+    LRESULT OnPaint();
+    LRESULT OnTimer(WPARAM wParam);
+    LRESULT OnKeyDown(WPARAM wParam);
+    LRESULT OnMeasureItem(LPARAM lParam);
+    LRESULT OnDrawItem(LPARAM lParam);
+
+    // Refactored socket event handlers for better code organization
+    void ProcessRawJsonEvent(const std::string& data);
+    void ProcessChatMessage(const nlohmann::json& message);
+    void ProcessAckMessage(const nlohmann::json& message);
 
     // Helper function to resolve proper module handle
     static HINSTANCE ResolveModuleHandle(HINSTANCE hInstance);
