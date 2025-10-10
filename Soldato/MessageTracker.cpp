@@ -19,32 +19,29 @@ MessageTracker::~MessageTracker() {
     shutdown();
 }
 
-void MessageTracker::trackMessage(const Message& message) {
-    if (message.type != MessageType::CHAT) {
-        return; // Only track chat messages
-    }
-
+void MessageTracker::trackMessage(const std::string& messageId, const std::string& senderId) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Check if message already exists (upsert behavior)
-    auto it = m_messageMap.find(message.messageId);
+    auto it = m_messageMap.find(messageId);
     if (it != m_messageMap.end()) {
-        std::cout << "[MessageTracker] Message already tracked, updating: " << message.messageId
-                  << " (sender: " << message.senderId << ")" << std::endl;
+        std::cout << "[MessageTracker] Message already tracked, updating: " << messageId
+                  << " (sender: " << senderId << ")" << std::endl;
         // Update existing message info but preserve acknowledgments
-        it->second->message = message;
+        it->second->senderId = senderId;
         it->second->timestamp = std::chrono::steady_clock::now();
         return;
     }
 
-    m_messageMap[message.messageId] = std::make_unique<MessageInfo>(
-        message,
+    m_messageMap[messageId] = std::make_unique<MessageInfo>(
+        messageId,
+        senderId,
         std::chrono::steady_clock::now()
     );
     m_totalMessagesSent++;
 
-    std::cout << "[MessageTracker] Tracking new message: " << message.messageId
-              << " (sender: " << message.senderId << ")" << std::endl;
+    std::cout << "[MessageTracker] Tracking new message: " << messageId
+              << " (sender: " << senderId << ")" << std::endl;
 }
 
 void MessageTracker::processAcknowledgment(const Message& ack) {
@@ -70,11 +67,11 @@ void MessageTracker::processAcknowledgment(const Message& ack) {
     if (ack.type == MessageType::ACK) {
         m_totalAcksReceived++;
         std::cout << "[MessageTracker] Received ACK for message: " << ack.originalMessageId.value()
-                  << " from: " << ack.senderId << " (original sender: " << info->message.senderId << ")" << std::endl;
+                  << " from: " << ack.senderId << " (original sender: " << info->senderId << ")" << std::endl;
     } else {
         m_totalNacksReceived++;
         std::cout << "[MessageTracker] Received NACK for message: " << ack.originalMessageId.value()
-                  << " from: " << ack.senderId << " (original sender: " << info->message.senderId << ")" << std::endl;
+                  << " from: " << ack.senderId << " (original sender: " << info->senderId << ")" << std::endl;
     }
 }
 

@@ -371,10 +371,10 @@ bool NetworkManager::SendMessage(const std::string& message)
         OutputDebugStringA("SendMessage: JSON parse failed, creating new Teflon message\n");
     }
 
-    // Track the message for ACK/NACK
+    // Track the message for ACK/NACK (lightweight - only UUID and sender)
     if (m_messageTracker) {
         OutputDebugStringA("SendMessage: Tracking message\n");
-        m_messageTracker->trackMessage(teflonMessage);
+        m_messageTracker->trackMessage(teflonMessage.messageId, teflonMessage.senderId);
     }
 
     // Serialize message as JSON
