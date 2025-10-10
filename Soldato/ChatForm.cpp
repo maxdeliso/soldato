@@ -1427,14 +1427,17 @@ void ChatForm::ProcessRawJsonEvent(const std::string& data)
 
 void ChatForm::ProcessChatMessage(const nlohmann::json& message)
 {
+    using namespace nlohmann::literals;
+
     if (!message.contains("messageId") || !message.contains("body") || !message.contains("senderId")) {
         DEBUG_LOG("ChatForm: CHAT message missing required fields");
         return;
     }
 
-    std::string messageId = message["messageId"];
-    std::string body = message["body"];
-    std::string senderId = message["senderId"];
+    // Use JSON pointer literals for efficient property access
+    std::string messageId = message["/messageId"_json_pointer];
+    std::string body = message["/body"_json_pointer];
+    std::string senderId = message["/senderId"_json_pointer];
 
     DEBUG_LOG("ChatForm: CHAT message - ID: " + messageId + ", senderId: " + senderId);
 
@@ -1449,10 +1452,12 @@ void ChatForm::ProcessChatMessage(const nlohmann::json& message)
 
 void ChatForm::ProcessAckMessage(const nlohmann::json& message)
 {
-    // This is an ACK message - process it directly
-    std::string ackMessageId = message["messageId"];
-    std::string originalMessageId = message["originalMessageId"];
-    std::string ackSenderId = message["senderId"];
+    using namespace nlohmann::literals;
+
+    // This is an ACK message - process it directly using JSON pointer literals
+    std::string ackMessageId = message["/messageId"_json_pointer];
+    std::string originalMessageId = message["/originalMessageId"_json_pointer];
+    std::string ackSenderId = message["/senderId"_json_pointer];
 
     DEBUG_LOG("ChatForm: Processing ACK - Message ID: " + ackMessageId + ", Original ID: " + originalMessageId + ", From: " + ackSenderId);
 
@@ -1462,7 +1467,7 @@ void ChatForm::ProcessAckMessage(const nlohmann::json& message)
     ackMsg.messageId = ackMessageId;
     ackMsg.type = MessageType::ACK;
     ackMsg.originalMessageId = originalMessageId;
-    ackMsg.body = message["body"];
+    ackMsg.body = message["/body"_json_pointer];
 
     // Use NetworkManager's MessageTracker
     if (m_networkManager) {
