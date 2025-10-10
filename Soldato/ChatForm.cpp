@@ -375,10 +375,27 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                             msg.acknowledgingParties = ackParties;
                             msg.hasAck = networkTracker->hasAcknowledgment(msg.messageId);
 
-                            // Check for timeout (simple implementation)
+                            // Check for timeout with protection against extreme time jumps
                             auto now = std::chrono::steady_clock::now();
                             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - msg.timestamp).count();
-                            msg.isTimedOut = (elapsed > MessageTracker::MESSAGE_TIMEOUT_SECONDS && !msg.hasAck);
+
+                            // Protect against extreme time jumps (e.g., from sleep/hibernate)
+                            // If elapsed time is unreasonably large, treat as timeout but don't spam
+                            constexpr long long MAX_REASONABLE_ELAPSED = 60 * 60; // 1 hour
+                            bool isTimedOut = false;
+
+                            if (elapsed > MAX_REASONABLE_ELAPSED) {
+                                // Extreme time jump - likely from sleep/hibernate
+                                // Mark as timed out but don't trigger excessive redraws
+                                isTimedOut = true;
+                                DEBUG_LOG("ChatForm: Extreme time jump detected (" + std::to_string(elapsed) +
+                                         "s) for message " + msg.messageId + " - treating as timeout");
+                            } else if (elapsed > MessageTracker::MESSAGE_TIMEOUT_SECONDS) {
+                                // Normal timeout
+                                isTimedOut = true;
+                            }
+
+                            msg.isTimedOut = (isTimedOut && !msg.hasAck);
 
                             if (hadAck != msg.hasAck || wasTimedOut != msg.isTimedOut) {
                                 DEBUG_LOG("ChatForm: Message " + msg.messageId + " status changed - hasAck: " +
