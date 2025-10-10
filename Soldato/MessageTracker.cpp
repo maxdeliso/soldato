@@ -1,6 +1,6 @@
 #include "framework.h"
 #include "MessageTracker.h"
-#include <iostream>
+#include "DebugUtils.h"
 #include <algorithm>
 
 MessageTracker::MessageTracker()
@@ -25,8 +25,7 @@ void MessageTracker::trackMessage(const std::string& messageId, const std::strin
     // Check if message already exists (upsert behavior)
     auto it = m_messageMap.find(messageId);
     if (it != m_messageMap.end()) {
-        std::cout << "[MessageTracker] Message already tracked, updating: " << messageId
-                  << " (sender: " << senderId << ")" << std::endl;
+        DEBUG_LOG("[MessageTracker] Message already tracked, updating: " + messageId + " (sender: " + senderId + ")");
         // Update existing message info but preserve acknowledgments
         it->second->senderId = senderId;
         it->second->timestamp = std::chrono::steady_clock::now();
@@ -40,8 +39,7 @@ void MessageTracker::trackMessage(const std::string& messageId, const std::strin
     );
     m_totalMessagesSent++;
 
-    std::cout << "[MessageTracker] Tracking new message: " << messageId
-              << " (sender: " << senderId << ")" << std::endl;
+    DEBUG_LOG("[MessageTracker] Tracking new message: " + messageId + " (sender: " + senderId + ")");
 }
 
 void MessageTracker::processAcknowledgment(const Message& ack) {
@@ -53,8 +51,7 @@ void MessageTracker::processAcknowledgment(const Message& ack) {
 
     auto it = m_messageMap.find(ack.originalMessageId.value());
     if (it == m_messageMap.end()) {
-        std::cout << "[MessageTracker] Ignoring acknowledgment for unknown or timed out message: "
-                  << ack.originalMessageId.value() << std::endl;
+        DEBUG_LOG("[MessageTracker] Ignoring acknowledgment for unknown or timed out message: " + ack.originalMessageId.value());
         return; // Message not found or already timed out
     }
 
@@ -66,12 +63,10 @@ void MessageTracker::processAcknowledgment(const Message& ack) {
 
     if (ack.type == MessageType::ACK) {
         m_totalAcksReceived++;
-        std::cout << "[MessageTracker] Received ACK for message: " << ack.originalMessageId.value()
-                  << " from: " << ack.senderId << " (original sender: " << info->senderId << ")" << std::endl;
+        DEBUG_LOG("[MessageTracker] Received ACK for message: " + ack.originalMessageId.value() + " from: " + ack.senderId + " (original sender: " + info->senderId + ")");
     } else {
         m_totalNacksReceived++;
-        std::cout << "[MessageTracker] Received NACK for message: " << ack.originalMessageId.value()
-                  << " from: " << ack.senderId << " (original sender: " << info->senderId << ")" << std::endl;
+        DEBUG_LOG("[MessageTracker] Received NACK for message: " + ack.originalMessageId.value() + " from: " + ack.senderId + " (original sender: " + info->senderId + ")");
     }
 }
 
@@ -132,7 +127,7 @@ void MessageTracker::cleanupTimedOutMessages() {
     auto it = m_messageMap.begin();
     while (it != m_messageMap.end()) {
         if (it->second->timestamp < cutoff) {
-            std::cout << "[MessageTracker] Message timed out: " << it->first << std::endl;
+            DEBUG_LOG("[MessageTracker] Message timed out: " + it->first);
             m_totalMessagesTimedOut++;
             it = m_messageMap.erase(it);
         } else {
