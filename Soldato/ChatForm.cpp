@@ -349,17 +349,8 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             // This is EXECUTED on the UI Thread
             SystemEventData* data = (SystemEventData*)lParam;
 
-            // Only show important system messages in chat, log others as debug
-            if (data->eventType == 1 || data->eventType == 3) {
-                // Event type 1: Connection established
-                // Event type 3: Socket closed by remote
-                AddChatMessage(L"System", data->data);
-            } else {
-                // All other system events are debug information
-                std::string debugMsg = "NetworkManager: Event " + std::to_string(data->eventType) + " - " +
-                                     std::string(data->data.begin(), data->data.end());
-                DEBUG_LOG(debugMsg);
-            }
+            // All events reaching this handler are UI-relevant (Connection established or Socket closed)
+            AddChatMessage(L"System", data->data);
 
             UpdatePeerDisplay();
             UpdateConnectionUI(); // Update UI state based on connection
@@ -1259,13 +1250,20 @@ void ChatForm::OnSocketEvent(SocketEventType eventType, const std::string& data)
         }
     }
 
-    // 1. Allocate event data on the heap
-    SystemEventData* eventData = new SystemEventData();
-    eventData->eventType = static_cast<int>(eventType);
-    eventData->data = StringUtils::to_wstring(data);
+    // Only send UI events for important system messages (Connection established and Socket closed)
+    if (eventType == SocketEventType::Connected || eventType == SocketEventType::SocketClosed) {
+        // 1. Allocate event data on the heap
+        SystemEventData* eventData = new SystemEventData();
+        eventData->eventType = static_cast<int>(eventType);
+        eventData->data = StringUtils::to_wstring(data);
 
-    // 2. Post the POINTER to the UI thread
-    PostMessage(m_hWnd, WM_APP_SYSTEM_EVENT, 0, (LPARAM)eventData);
+        // 2. Post the POINTER to the UI thread
+        PostMessage(m_hWnd, WM_APP_SYSTEM_EVENT, 0, (LPARAM)eventData);
+    } else {
+        // All other system events are debug information only
+        std::string debugMsg = "NetworkManager: Event " + std::to_string(static_cast<int>(eventType)) + " - " + data;
+        DEBUG_LOG(debugMsg);
+    }
 }
 
 // About dialog procedure
