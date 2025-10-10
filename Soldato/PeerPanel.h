@@ -11,7 +11,6 @@
 /**
  * Panel for displaying known peers in the network.
  * Shows peer UUIDs, IP addresses, and last seen timestamps.
- * Equivalent to the Java PeerPanel class.
  */
 class PeerPanel {
 private:

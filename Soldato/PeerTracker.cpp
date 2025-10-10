@@ -1,6 +1,6 @@
 #include "framework.h"
 #include "PeerTracker.h"
-#include <iostream>
+#include "DebugUtils.h"
 
 PeerTracker::PeerTracker()
     : PeerTracker("") {
@@ -26,14 +26,14 @@ void PeerTracker::updatePeer(const std::string& senderId, const std::string& sen
     }
 
     if (senderAddress.empty()) {
-        std::cout << "[PeerTracker] Could not extract IP address from sender" << std::endl;
+        DEBUG_LOG("PeerTracker: Could not extract IP address from sender");
         return;
     }
 
     std::lock_guard<std::mutex> lock(m_peersMutex);
     m_peers[senderId] = PeerInfo(senderId, senderAddress, std::chrono::steady_clock::now());
 
-    std::cout << "[PeerTracker] Updated peer: " << senderId << " at " << senderAddress << std::endl;
+    DEBUG_LOG("PeerTracker: Updated peer: " + senderId + " at " + senderAddress);
 }
 
 std::unordered_map<std::string, PeerInfo> PeerTracker::getPeers() const {
@@ -54,7 +54,7 @@ void PeerTracker::cleanupInactivePeers() {
     auto it = m_peers.begin();
     while (it != m_peers.end()) {
         if (it->second.lastSeen < cutoff) {
-            std::cout << "[PeerTracker] Removing inactive peer: " << it->first << std::endl;
+            DEBUG_LOG("PeerTracker: Removing inactive peer: " + it->first);
             it = m_peers.erase(it);
         } else {
             ++it;
@@ -65,7 +65,7 @@ void PeerTracker::cleanupInactivePeers() {
 void PeerTracker::reset() {
     std::lock_guard<std::mutex> lock(m_peersMutex);
     m_peers.clear();
-    std::cout << "[PeerTracker] Peer tracker reset - cleared all peers" << std::endl;
+    DEBUG_LOG("PeerTracker: Peer tracker reset - cleared all peers");
 }
 
 void PeerTracker::shutdown() {

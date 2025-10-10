@@ -19,6 +19,20 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
+// Socket event types for callback notifications
+enum class SocketEventType {
+    Connected = 1,              // Connection established
+    MessageSent = 2,            // Message successfully sent
+    SocketClosed = 3,           // Socket closed by remote
+    MessageReceived = 4,        // Message received (legacy or Teflon)
+    ReadEvent = 5,              // FD_READ event received
+    RawJsonReceived = 6,        // Raw JSON data received
+    JsonParseError = 7,         // JSON parsing failed
+    AckSent = 8,                // Acknowledgment sent
+    SendBlocked = 9,            // SendMessageAsync blocked
+    Error = -1                  // General error condition
+};
+
 class NetworkManager
 {
 private:
@@ -72,8 +86,6 @@ public:
     bool IsConnected() const { return m_connected.load(); }
 
     // Teflon-compatible message helpers
-    std::string SerializeMessage(const Message& message);
-    bool DeserializeMessage(const std::string& jsonData, Message& message);
     Message CreateChatMessage(const std::string& sender, const std::string& content);
     Message CreateAcknowledgment(const std::string& sender, const std::string& originalMessageId, bool isPositive);
 
@@ -109,7 +121,7 @@ public:
     void ClearMessageCallback();
 
     // Windows event callbacks - using std::function for safer callback management
-    typedef std::function<void(int eventType, const std::string& data)> SocketEventCallback;
+    typedef std::function<void(SocketEventType eventType, const std::string& data)> SocketEventCallback;
     void SetSocketEventCallback(SocketEventCallback callback);
     void ClearSocketEventCallback();
 

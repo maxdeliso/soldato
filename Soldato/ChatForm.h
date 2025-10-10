@@ -37,11 +37,11 @@ struct ChatMessage {
     std::string messageId;           // For tracking acknowledgments
     COLORREF senderColor;
     COLORREF messageColor;
-    bool isOwnMessage;               // True if sent by this user
-    bool hasAck;                     // True if acknowledged
-    bool hasNack;                    // True if negatively acknowledged
-    bool isTimedOut;                 // True if message timed out
-    std::unordered_set<std::string> acknowledgingParties; // Who has acknowledged
+    bool isOwnMessage;
+    bool hasAck;
+    bool hasNack;
+    bool isTimedOut;
+    std::unordered_set<std::string> acknowledgingParties;
     std::chrono::steady_clock::time_point timestamp;
 
     ChatMessage() : senderColor(RGB(255, 255, 0)), messageColor(RGB(0, 255, 0)),
@@ -82,7 +82,7 @@ private:
     void OnConnect();
     void OnDisconnect();
     void OnNetworkMessage(const std::string& sender, const std::string& message);
-    void OnSocketEvent(int eventType, const std::string& data);
+    void OnSocketEvent(SocketEventType eventType, const std::string& data);
 
     // Owner-drawn ListBox handlers
     void OnMeasureItem(MEASUREITEMSTRUCT* pMeasureItem);

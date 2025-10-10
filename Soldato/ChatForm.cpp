@@ -4,6 +4,7 @@
 #include "StringUtils.h"
 #include "DebugUtils.h"
 #include "Message.h"
+#include "NetworkManager.h"
 #include "json.hpp"
 #include <commctrl.h>
 #include <richedit.h>
@@ -22,6 +23,29 @@ enum class ControlId {
     MessageInput = 1002,
     SendButton = 1003
 };
+
+// Message status symbols
+enum class MessageStatus {
+    Pending = 0,
+    Acknowledged = 1,
+    NegativelyAcknowledged = 2,
+    TimedOut = 3
+};
+
+// Helper function to get status symbol
+std::wstring GetStatusSymbol(MessageStatus status) {
+    switch (status) {
+        case MessageStatus::TimedOut:
+            return L"T";
+        case MessageStatus::NegativelyAcknowledged:
+            return L"X";
+        case MessageStatus::Acknowledged:
+            return L"V";
+        case MessageStatus::Pending:
+        default:
+            return L"?";
+    }
+}
 
 // Custom message for Enter key
 #define WM_SEND_MESSAGE    (WM_USER + 1)
@@ -77,7 +101,15 @@ LRESULT CALLBACK MessageInputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
     }
 }
 
-ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd(nullptr), m_hChatListBox(nullptr), m_networkManager(nullptr), m_connectDialog(nullptr), m_peerPanel(nullptr), m_hFont(nullptr), m_hInstance(hInstance)
+ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) :
+m_hParent(parent),
+m_hWnd(nullptr),
+m_hChatListBox(nullptr),
+m_networkManager(nullptr),
+m_connectDialog(nullptr),
+m_peerPanel(nullptr),
+m_hFont(nullptr),
+m_hInstance(hInstance)
 {
     // Resolve the proper module handle
     m_hInstance = ResolveModuleHandle(m_hInstance);
@@ -139,7 +171,7 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) : m_hParent(parent), m_hWnd
         m_networkManager->SetMessageCallback([this](const std::string& sender, const std::string& message) {
             this->OnNetworkMessage(sender, message);
         });
-        m_networkManager->SetSocketEventCallback([this](int eventType, const std::string& data) {
+        m_networkManager->SetSocketEventCallback([this](SocketEventType eventType, const std::string& data) {
             this->OnSocketEvent(eventType, data);
         });
 
@@ -633,7 +665,6 @@ void ChatForm::InitializeControls()
         DEBUG_LOG("ChatForm: ERROR - Failed to create chat ListBox control");
     }
 
-
     // Set cyberpunk monospace font for chat ListBox
     m_hFont = CreateFontW(
         12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
@@ -907,54 +938,59 @@ void ChatForm::AddChatMessage(const std::wstring& sender, const std::wstring& me
 
 void ChatForm::SendChatMessage()
 {
-    wchar_t buffer[1024];
-    GetWindowTextW(m_hMessageInput, buffer, 1024);
-
-    if (wcslen(buffer) > 0)
+    // Get the length of the text first
+    int textLength = GetWindowTextLengthW(m_hMessageInput);
+    if (textLength == 0)
     {
-        // Convert to narrow string using proper UTF-8 conversion
-        std::wstring wMessage(buffer);
-        std::string message = StringUtils::to_string(wMessage);
+        return; // No text to send
+    }
 
-        // Debug: Log what we're trying to do
-        DEBUG_LOG("ChatForm: SendChatMessage called - checking connection state");
+    // Allocate buffer dynamically based on actual text length
+    std::vector<wchar_t> buffer(textLength + 1);
+    GetWindowTextW(m_hMessageInput, buffer.data(), textLength + 1);
 
-        // Send via network manager (async to avoid blocking UI)
-        if (m_networkManager && m_networkManager->IsConnected())
-        {
-            DEBUG_LOG("ChatForm: Connection confirmed - sending message");
+    // Convert to narrow string using proper UTF-8 conversion
+    std::wstring wMessage(buffer.data());
+    std::string message = StringUtils::to_string(wMessage);
 
-            // Create a proper Message object for tracking
-            Message msg("You", message);
+    // Debug: Log what we're trying to do
+    DEBUG_LOG("ChatForm: SendChatMessage called - checking connection state");
 
-            // Add to chat history immediately (optimistic UI update) with message ID
-            AddChatMessage(L"You", buffer, msg.messageId);
+    // Send via network manager (async to avoid blocking UI)
+    if (m_networkManager && m_networkManager->IsConnected())
+    {
+        DEBUG_LOG("ChatForm: Connection confirmed - sending message");
 
-            // Send the message as JSON
-            nlohmann::json jsonMsg;
-            to_json(jsonMsg, msg);
-            std::string jsonString = jsonMsg.dump();
+        // Create a proper Message object for tracking
+        Message msg("You", message);
 
-            DEBUG_LOG("ChatForm: Calling SendMessageAsync...");
-            m_networkManager->SendMessageAsync(jsonString);
-            DEBUG_LOG("ChatForm: SendMessageAsync completed");
+        // Add to chat history immediately (optimistic UI update) with message ID
+        AddChatMessage(L"You", wMessage, msg.messageId);
 
-            // Note: The NetworkManager will create a wrapper message with a new ID
-            // We need to track the actual message ID that gets sent over the network
-            // This will be handled by the NetworkManager's callback
+        // Send the message as JSON
+        nlohmann::json jsonMsg;
+        to_json(jsonMsg, msg);
+        std::string jsonString = jsonMsg.dump();
 
-            SetWindowTextW(m_hMessageInput, L"");
-            SetFocus(m_hMessageInput);
+        DEBUG_LOG("ChatForm: Calling SendMessageAsync...");
+        m_networkManager->SendMessageAsync(jsonString);
+        DEBUG_LOG("ChatForm: SendMessageAsync completed");
 
-            // Ensure send button remains the default button
-            SendMessage(m_hSendButton, BM_SETSTYLE, BS_PUSHBUTTON | BS_DEFPUSHBUTTON, TRUE);
-            DEBUG_LOG("ChatForm: Send button set as default after message sent");
-        }
-        else
-        {
-            DEBUG_LOG("ChatForm: Not connected - showing not connected message");
-            AddChatMessage(L"System", L"Not connected to network");
-        }
+        // Note: The NetworkManager will create a wrapper message with a new ID
+        // We need to track the actual message ID that gets sent over the network
+        // This will be handled by the NetworkManager's callback
+
+        SetWindowTextW(m_hMessageInput, L"");
+        SetFocus(m_hMessageInput);
+
+        // Ensure send button remains the default button
+        SendMessage(m_hSendButton, BM_SETSTYLE, BS_PUSHBUTTON | BS_DEFPUSHBUTTON, TRUE);
+        DEBUG_LOG("ChatForm: Send button set as default after message sent");
+    }
+    else
+    {
+        DEBUG_LOG("ChatForm: Not connected - showing not connected message");
+        AddChatMessage(L"System", L"Not connected to network");
     }
 }
 
@@ -1056,7 +1092,7 @@ void ChatForm::UpdateConnectionUI()
 
         // Restore socket callback after reconnecting
         if (connected) {
-            m_networkManager->SetSocketEventCallback([this](int eventType, const std::string& data) {
+            m_networkManager->SetSocketEventCallback([this](SocketEventType eventType, const std::string& data) {
                 this->OnSocketEvent(eventType, data);
             });
             DEBUG_LOG("ChatForm: Socket callback restored after connection");
@@ -1154,15 +1190,15 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
     PostMessage(m_hWnd, WM_APP_NEW_MESSAGE, 0, (LPARAM)data);
 }
 
-void ChatForm::OnSocketEvent(int eventType, const std::string& data)
+void ChatForm::OnSocketEvent(SocketEventType eventType, const std::string& data)
 {
     // This is EXECUTED on the Network Thread
 
-    DEBUG_LOG("ChatForm: OnSocketEvent received - eventType: " + std::to_string(eventType) + ", data: " + data);
+    DEBUG_LOG("ChatForm: OnSocketEvent received - eventType: " + std::to_string(static_cast<int>(eventType)) + ", data: " + data);
 
-    // Handle "Raw JSON" event (eventType 6) to capture wrapper message ID
-    if (eventType == 6 && m_messageTracker) {
-        DEBUG_LOG("ChatForm: Processing eventType 6 (Raw JSON)");
+    // Handle "Raw JSON" event to capture message ID
+    if (eventType == SocketEventType::RawJsonReceived && m_messageTracker) {
+        DEBUG_LOG("ChatForm: Processing RawJsonReceived event");
         try {
             // The data comes as "Raw JSON: {json}" - extract just the JSON part
             std::string jsonPart = data;
@@ -1174,58 +1210,30 @@ void ChatForm::OnSocketEvent(int eventType, const std::string& data)
                 DEBUG_LOG("ChatForm: Extracted JSON part: " + jsonPart);
             }
 
-            nlohmann::json wrapperMsg = nlohmann::json::parse(jsonPart);
-            DEBUG_LOG("ChatForm: Successfully parsed wrapper message JSON");
+            nlohmann::json message = nlohmann::json::parse(jsonPart);
+            DEBUG_LOG("ChatForm: Successfully parsed message JSON");
 
-            // Be specific: this block is for CHAT messages containing an inner JSON body.
-            if (wrapperMsg.contains("type") && wrapperMsg["type"] == "CHAT" &&
-                wrapperMsg.contains("messageId") && wrapperMsg.contains("body") &&
-                wrapperMsg.contains("senderId")) {
+            // Handle CHAT messages - simple flat structure
+            if (message.contains("type") && message["type"] == "CHAT" &&
+                message.contains("messageId") && message.contains("body") &&
+                message.contains("senderId")) {
 
-                std::string wrapperMessageId = wrapperMsg["messageId"];
-                std::string body = wrapperMsg["body"];
-                std::string senderId = wrapperMsg["senderId"];
+                std::string messageId = message["messageId"];
+                std::string body = message["body"];
+                std::string senderId = message["senderId"];
 
-                DEBUG_LOG("ChatForm: Wrapper message ID: " + wrapperMessageId + ", senderId: " + senderId);
+                DEBUG_LOG("ChatForm: CHAT message - ID: " + messageId + ", senderId: " + senderId);
 
-                // Parse the inner message to get the original message ID
-                if (true) { // This block is now only for CHAT messages
-                    // Parse the inner message to get the original message ID
-                    nlohmann::json innerMsg = nlohmann::json::parse(body);
-                    DEBUG_LOG("ChatForm: Successfully parsed inner message JSON");
-
-                    if (innerMsg.contains("messageId") && innerMsg.contains("senderId") &&
-                        innerMsg["senderId"] == "You") {
-
-                        std::string originalMessageId = innerMsg["messageId"];
-                        DEBUG_LOG("ChatForm: Message sent - Original ID: " + originalMessageId + ", Wrapper ID: " + wrapperMessageId);
-
-                        // Update the message tracking to use the wrapper message ID
-                        // Find the message in our chat messages and update its ID
-                        for (auto& chatMsg : m_chatMessages) {
-                            if (chatMsg.messageId == originalMessageId && chatMsg.isOwnMessage) {
-                                chatMsg.messageId = wrapperMessageId; // Update to wrapper ID
-                                DEBUG_LOG("ChatForm: Updated message ID from " + originalMessageId + " to " + wrapperMessageId);
-                                break;
-                            }
-                        }
-
-                        // Also update the MessageTracker
-                        Message msg("You", innerMsg["body"]);
-                        msg.messageId = wrapperMessageId;
-                        m_messageTracker->trackMessage(msg);
-                        DEBUG_LOG("ChatForm: Tracking wrapper message with ID: " + wrapperMessageId);
-                    } else {
-                        DEBUG_LOG("ChatForm: Inner message doesn't match expected format or sender");
-                    }
-                } else {
-                    DEBUG_LOG("ChatForm: Non-CHAT message, skipping inner JSON parsing");
-                }
-            } else if (wrapperMsg.contains("type") && wrapperMsg["type"] == "ACK") {
+                // Track the message directly - no nested parsing needed
+                Message msg(senderId, body);
+                msg.messageId = messageId;
+                m_messageTracker->trackMessage(msg);
+                DEBUG_LOG("ChatForm: Tracking message with ID: " + messageId);
+            } else if (message.contains("type") && message["type"] == "ACK") {
                 // This is an ACK message - process it directly
-                std::string ackMessageId = wrapperMsg["messageId"];
-                std::string originalMessageId = wrapperMsg["originalMessageId"];
-                std::string ackSenderId = wrapperMsg["senderId"];
+                std::string ackMessageId = message["messageId"];
+                std::string originalMessageId = message["originalMessageId"];
+                std::string ackSenderId = message["senderId"];
 
                 DEBUG_LOG("ChatForm: Processing ACK - Message ID: " + ackMessageId + ", Original ID: " + originalMessageId + ", From: " + ackSenderId);
 
@@ -1235,7 +1243,7 @@ void ChatForm::OnSocketEvent(int eventType, const std::string& data)
                 ackMsg.messageId = ackMessageId;
                 ackMsg.type = MessageType::ACK;
                 ackMsg.originalMessageId = originalMessageId;
-                ackMsg.body = wrapperMsg["body"];
+                ackMsg.body = message["body"];
 
                 m_messageTracker->processAcknowledgment(ackMsg);
                 DEBUG_LOG("ChatForm: Processed ACK for message: " + originalMessageId);
@@ -1244,16 +1252,16 @@ void ChatForm::OnSocketEvent(int eventType, const std::string& data)
                 PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
                 DEBUG_LOG("ChatForm: Posted WM_APP_UPDATE_ACK to UI thread");
             } else {
-                DEBUG_LOG("ChatForm: Wrapper message doesn't contain required fields");
+                DEBUG_LOG("ChatForm: Message doesn't contain required fields");
             }
         } catch (const std::exception& e) {
-            DEBUG_LOG("ChatForm: Failed to parse wrapper message: " + std::string(e.what()));
+            DEBUG_LOG("ChatForm: Failed to parse message: " + std::string(e.what()));
         }
     }
 
     // 1. Allocate event data on the heap
     SystemEventData* eventData = new SystemEventData();
-    eventData->eventType = eventType;
+    eventData->eventType = static_cast<int>(eventType);
     eventData->data = StringUtils::to_wstring(data);
 
     // 2. Post the POINTER to the UI thread
@@ -1496,16 +1504,19 @@ void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& me
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(0, 0, 0)); // Black text on colored background
 
-    std::wstring statusSymbol;
+    // Determine message status using enum
+    MessageStatus status;
     if (message.isTimedOut) {
-        statusSymbol = L"X"; // X for timeout
+        status = MessageStatus::TimedOut;
     } else if (message.hasNack) {
-        statusSymbol = L"X"; // X for NACK
+        status = MessageStatus::NegativelyAcknowledged;
     } else if (message.hasAck) {
-        statusSymbol = L"V"; // V for ACK (checkmark)
+        status = MessageStatus::Acknowledged;
     } else {
-        statusSymbol = L"?"; // ? for pending
+        status = MessageStatus::Pending;
     }
+
+    std::wstring statusSymbol = GetStatusSymbol(status);
 
     // Center the symbol in the indicator
     RECT textRect = indicatorRect;
