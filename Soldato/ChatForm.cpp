@@ -1586,16 +1586,15 @@ void ChatForm::DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& mes
     // Use DT_CALCRECT to find where the sender text ends
     std::wstring senderText = L"[" + message.sender + L"]: ";
     DrawTextW(hdc, senderText.c_str(), -1, &senderRect, DT_SINGLELINE | DT_CALCRECT);
-    RECT drawRect = rect;
-    DrawTextW(hdc, senderText.c_str(), -1, &drawRect, DT_SINGLELINE);
+    // Reuse senderRect for actual drawing
+    DrawTextW(hdc, senderText.c_str(), -1, &senderRect, DT_SINGLELINE);
 
-    // Draw the message text
-    RECT messageRect = rect;
-    messageRect.left += (senderRect.right - senderRect.left);
-    messageRect.right -= 25; // Leave space for ACK indicator
+    // Draw the message text - reuse senderRect as messageRect
+    senderRect.left += (senderRect.right - senderRect.left);
+    senderRect.right = rect.right - 25; // Leave space for ACK indicator
 
     SetTextColor(hdc, UNPACK_MESSAGE_COLOR(message.packedColors));
-    DrawTextW(hdc, message.message.c_str(), -1, &messageRect, DT_WORDBREAK);
+    DrawTextW(hdc, message.message.c_str(), -1, &senderRect, DT_WORDBREAK);
 }
 
 void ChatForm::UpdateMessageAckStatus(const std::string& messageId)
