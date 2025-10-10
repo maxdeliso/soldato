@@ -5,6 +5,7 @@
 #include "DebugUtils.h"
 #include "Message.h"
 #include "NetworkManager.h"
+#include "JsonUtils.h"
 #include "json.hpp"
 #include <commctrl.h>
 #include <richedit.h>
@@ -1143,8 +1144,9 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
         // Try to parse as JSON
         try {
             nlohmann::json jsonMsg = nlohmann::json::parse(message);
-            if (jsonMsg.contains("type")) {
-                std::string msgType = jsonMsg["type"];
+            // Use optimized JSON utility to avoid redundant key hashing
+            std::string msgType = JsonUtils::getString(jsonMsg, "type");
+            if (!msgType.empty()) {
                 DEBUG_LOG("ChatForm: Parsed JSON message type: " + msgType);
 
                 if (msgType == "ACK" || msgType == "NACK") {

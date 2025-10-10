@@ -1,4 +1,5 @@
 #include "Message.h"
+#include "JsonUtils.h"
 #include <random>
 #include <sstream>
 #include <iomanip>
@@ -73,40 +74,29 @@ void to_json(nlohmann::json& j, const Message& msg) {
     }
 }
 
-// JSON deserialization function
+// JSON deserialization function - optimized to avoid redundant key lookups
 void from_json(const nlohmann::json& j, Message& msg) {
-    j.at("senderId").get_to(msg.senderId);
-    j.at("body").get_to(msg.body);
-    j.at("messageId").get_to(msg.messageId);
+    // Batch extract all string values in a single pass to minimize lookups
+    std::vector<std::string> stringKeys = {"senderId", "body", "messageId", "type", "originalMessageId"};
+    auto stringValues = JsonUtils::extractStrings(j, stringKeys);
 
-    std::string typeStr;
-    j.at("type").get_to(typeStr);
-    msg.type = Message::stringToMessageType(typeStr);
+    // Assign extracted string values
+    msg.senderId = stringValues["senderId"];
+    msg.body = stringValues["body"];
+    msg.messageId = stringValues["messageId"];
 
-    j.at("checksum").get_to(msg.checksum);
+    // Handle type conversion
+    if (!stringValues["type"].empty()) {
+        msg.type = Message::stringToMessageType(stringValues["type"]);
+    }
 
     // Handle optional originalMessageId
-    if (j.contains("originalMessageId") && !j["originalMessageId"].is_null()) {
-        std::string originalId;
-        j.at("originalMessageId").get_to(originalId);
-        msg.originalMessageId = originalId;
+    if (!stringValues["originalMessageId"].empty()) {
+        msg.originalMessageId = stringValues["originalMessageId"];
     } else {
         msg.originalMessageId = std::nullopt;
     }
 
-    // Check if body contains nested JSON and extract the actual message content
-    if (msg.type == MessageType::CHAT && msg.body.length() > 0 && msg.body[0] == '{') {
-        try {
-            nlohmann::json nestedJson = nlohmann::json::parse(msg.body);
-            if (nestedJson.contains("body") && nestedJson["body"].is_string()) {
-                // Extract the actual message content from the nested JSON
-                msg.body = nestedJson["body"].get<std::string>();
-                // Recalculate checksum for the extracted content
-                msg.checksum = Message::calculateChecksum(msg.body);
-            }
-        } catch (const std::exception&) {
-            // If parsing fails, keep the original body
-            // This handles cases where the body is not actually nested JSON
-        }
-    }
+    // Extract checksum (integer)
+    msg.checksum = JsonUtils::getInt(j, "checksum");
 }
