@@ -175,9 +175,8 @@ m_hInstance(hInstance)
             this->OnSocketEvent(eventType, data);
         });
 
-        // Initialize message tracker
-        m_messageTracker = std::make_unique<MessageTracker>();
-        DEBUG_LOG("ChatForm: MessageTracker initialized");
+        // Message tracking is now handled by NetworkManager
+        DEBUG_LOG("ChatForm: Using NetworkManager's MessageTracker");
 
         // Set up a timer to periodically update acknowledgment statuses
         SetTimer(m_hWnd, 1, 2000, nullptr); // 2 second timer to reduce flickering
@@ -238,7 +237,6 @@ ChatForm::~ChatForm()
     // Smart pointers handle cleanup automatically
     m_peerPanel.reset();
     m_connectDialog.reset();
-    m_messageTracker.reset();
 
     if (m_hWnd)
     {
@@ -363,36 +361,40 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             DEBUG_LOG("ChatForm: WM_APP_UPDATE_ACK received");
             // Update all message acknowledgment statuses
             bool needsRedraw = false;
-            if (m_messageTracker) {
-                for (auto& msg : m_chatMessages) {
-                    if (msg.isOwnMessage && !msg.messageId.empty()) {
-                        auto ackParties = m_messageTracker->getAcknowledgingParties(msg.messageId);
-                        bool hadAck = msg.hasAck;
-                        bool wasTimedOut = msg.isTimedOut;
+            if (m_networkManager) {
+                // Get the MessageTracker from NetworkManager
+                auto networkTracker = m_networkManager->GetMessageTracker();
+                if (networkTracker) {
+                    for (auto& msg : m_chatMessages) {
+                        if (msg.isOwnMessage && !msg.messageId.empty()) {
+                            auto ackParties = networkTracker->getAcknowledgingParties(msg.messageId);
+                            bool hadAck = msg.hasAck;
+                            bool wasTimedOut = msg.isTimedOut;
 
-                        msg.acknowledgingParties = ackParties;
-                        msg.hasAck = !ackParties.empty();
+                            msg.acknowledgingParties = ackParties;
+                            msg.hasAck = networkTracker->hasAcknowledgment(msg.messageId);
 
-                        // Check for timeout (simple implementation)
-                        auto now = std::chrono::steady_clock::now();
-                        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - msg.timestamp).count();
-                        msg.isTimedOut = (elapsed > MessageTracker::MESSAGE_TIMEOUT_SECONDS && !msg.hasAck);
+                            // Check for timeout (simple implementation)
+                            auto now = std::chrono::steady_clock::now();
+                            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - msg.timestamp).count();
+                            msg.isTimedOut = (elapsed > MessageTracker::MESSAGE_TIMEOUT_SECONDS && !msg.hasAck);
 
-                        if (hadAck != msg.hasAck || wasTimedOut != msg.isTimedOut) {
-                            DEBUG_LOG("ChatForm: Message " + msg.messageId + " status changed - hasAck: " +
-                                     (msg.hasAck ? "true" : "false") + ", isTimedOut: " +
-                                     (msg.isTimedOut ? "true" : "false"));
-                            needsRedraw = true;
+                            if (hadAck != msg.hasAck || wasTimedOut != msg.isTimedOut) {
+                                DEBUG_LOG("ChatForm: Message " + msg.messageId + " status changed - hasAck: " +
+                                         (msg.hasAck ? "true" : "false") + ", isTimedOut: " +
+                                         (msg.isTimedOut ? "true" : "false"));
+                                needsRedraw = true;
+                            }
                         }
                     }
-                }
 
-                // Only invalidate if something actually changed
-                if (needsRedraw && m_hChatListBox) {
-                    DEBUG_LOG("ChatForm: Invalidating ListBox for redraw");
-                    InvalidateRect(m_hChatListBox, nullptr, TRUE);
-                } else {
-                    DEBUG_LOG("ChatForm: No changes detected, skipping redraw");
+                    // Only invalidate if something actually changed
+                    if (needsRedraw && m_hChatListBox) {
+                        DEBUG_LOG("ChatForm: Invalidating ListBox for redraw");
+                        InvalidateRect(m_hChatListBox, nullptr, TRUE);
+                    } else {
+                        DEBUG_LOG("ChatForm: No changes detected, skipping redraw");
+                    }
                 }
             }
             return 0;
@@ -913,18 +915,8 @@ void ChatForm::AddChatMessage(const std::wstring& sender, const std::wstring& me
     // Auto-scroll to the bottom
     SendMessage(m_hChatListBox, LB_SETTOPINDEX, index, 0);
 
-    // If this is our own message, track it for acknowledgments
-    if (chatMsg.isOwnMessage && m_messageTracker) {
-        Message msg(sender == L"You" ? "You" : std::string(sender.begin(), sender.end()),
-                   std::string(message.begin(), message.end()));
-        msg.messageId = chatMsg.messageId;
-        DEBUG_LOG("ChatForm: Tracking own message with ID: " + chatMsg.messageId);
-        m_messageTracker->trackMessage(msg);
-
-        // Store the original message ID for later reference
-        // The NetworkManager will create a new wrapped message, but we need to track the original
-        DEBUG_LOG("ChatForm: Original message ID stored: " + chatMsg.messageId);
-    }
+    // Note: Message tracking is now handled by NetworkManager to ensure
+    // the same message ID is used for both sending and ACK tracking
 }
 
 void ChatForm::SendChatMessage()
@@ -1126,7 +1118,7 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
     DEBUG_LOG("ChatForm: OnNetworkMessage received from: " + sender + ", message: " + message);
 
     // Check if this is an acknowledgment message or regular JSON message
-    if (m_messageTracker) {
+    if (m_networkManager) {
         // Try to parse as JSON
         try {
             nlohmann::json jsonMsg = nlohmann::json::parse(message);
@@ -1140,7 +1132,13 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
                     from_json(jsonMsg, ackMsg);
                     DEBUG_LOG("ChatForm: Processing " + msgType + " for message: " + ackMsg.originalMessageId.value_or("unknown"));
 
-                    m_messageTracker->processAcknowledgment(ackMsg);
+                    // Use NetworkManager's MessageTracker
+                    if (m_networkManager) {
+                        auto networkTracker = m_networkManager->GetMessageTracker();
+                        if (networkTracker) {
+                            networkTracker->processAcknowledgment(ackMsg);
+                        }
+                    }
 
                     // Update UI on main thread
                     PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
@@ -1150,6 +1148,12 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
                     // This is a regular chat message, extract the content
                     Message chatMsg;
                     from_json(jsonMsg, chatMsg);
+
+                    // Don't process our own messages here - they're already in the UI from SendChatMessage()
+                    if (chatMsg.senderId == m_networkManager->GetSenderId()) {
+                        DEBUG_LOG("ChatForm: OnNetworkMessage ignoring own message to prevent duplication: " + chatMsg.messageId);
+                        return;
+                    }
 
                     // Create message data for UI thread
                     MessageData* data = new MessageData();
@@ -1188,7 +1192,7 @@ void ChatForm::OnSocketEvent(SocketEventType eventType, const std::string& data)
     DEBUG_LOG("ChatForm: OnSocketEvent received - eventType: " + std::to_string(static_cast<int>(eventType)) + ", data: " + data);
 
     // Handle "Raw JSON" event to capture message ID
-    if (eventType == SocketEventType::RawJsonReceived && m_messageTracker) {
+    if (eventType == SocketEventType::RawJsonReceived && m_networkManager) {
         DEBUG_LOG("ChatForm: Processing RawJsonReceived event");
         try {
             // The data comes as "Raw JSON: {json}" - extract just the JSON part
@@ -1215,11 +1219,13 @@ void ChatForm::OnSocketEvent(SocketEventType eventType, const std::string& data)
 
                 DEBUG_LOG("ChatForm: CHAT message - ID: " + messageId + ", senderId: " + senderId);
 
-                // Track the message directly - no nested parsing needed
-                Message msg(senderId, body);
-                msg.messageId = messageId;
-                m_messageTracker->trackMessage(msg);
-                DEBUG_LOG("ChatForm: Tracking message with ID: " + messageId);
+                // Don't process our own messages here - they're already in the UI from SendChatMessage()
+                if (senderId == m_networkManager->GetSenderId()) {
+                    DEBUG_LOG("ChatForm: Ignoring own message to prevent duplication: " + messageId);
+                    return; // Exit early to prevent duplicate processing
+                }
+
+                DEBUG_LOG("ChatForm: Processing message from other user: " + senderId);
             } else if (message.contains("type") && message["type"] == "ACK") {
                 // This is an ACK message - process it directly
                 std::string ackMessageId = message["messageId"];
@@ -1236,7 +1242,13 @@ void ChatForm::OnSocketEvent(SocketEventType eventType, const std::string& data)
                 ackMsg.originalMessageId = originalMessageId;
                 ackMsg.body = message["body"];
 
-                m_messageTracker->processAcknowledgment(ackMsg);
+                // Use NetworkManager's MessageTracker
+                if (m_networkManager) {
+                    auto networkTracker = m_networkManager->GetMessageTracker();
+                    if (networkTracker) {
+                        networkTracker->processAcknowledgment(ackMsg);
+                    }
+                }
                 DEBUG_LOG("ChatForm: Processed ACK for message: " + originalMessageId);
 
                 // Update UI on main thread
@@ -1552,10 +1564,13 @@ void ChatForm::UpdateMessageAckStatus(const std::string& messageId)
     // Find the message in our vector and update its acknowledgment status
     for (auto& msg : m_chatMessages) {
         if (msg.messageId == messageId) {
-            if (m_messageTracker) {
-                auto ackParties = m_messageTracker->getAcknowledgingParties(messageId);
-                msg.acknowledgingParties = ackParties;
-                msg.hasAck = !ackParties.empty();
+            if (m_networkManager) {
+                auto networkTracker = m_networkManager->GetMessageTracker();
+                if (networkTracker) {
+                    auto ackParties = networkTracker->getAcknowledgingParties(messageId);
+                    msg.acknowledgingParties = ackParties;
+                    msg.hasAck = networkTracker->hasAcknowledgment(messageId);
+                }
 
                 // Check for NACK (this would need to be implemented in MessageTracker)
                 // For now, we'll assume no NACK unless explicitly set

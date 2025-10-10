@@ -67,6 +67,22 @@ public:
     std::unordered_set<std::string> getAcknowledgingParties(const std::string& messageId) const;
 
     /**
+     * Gets the number of acknowledgments for a message.
+     *
+     * @param messageId The ID of the message to check
+     * @return The number of acknowledgments received for the message
+     */
+    size_t getAcknowledgmentCount(const std::string& messageId) const;
+
+    /**
+     * Checks if a message has been acknowledged by any peer.
+     *
+     * @param messageId The ID of the message to check
+     * @return True if the message has been acknowledged by at least one peer
+     */
+    bool hasAcknowledgment(const std::string& messageId) const;
+
+    /**
      * Gets delivery statistics.
      *
      * @return A map of statistic names to their values

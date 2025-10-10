@@ -351,9 +351,25 @@ bool NetworkManager::SendMessage(const std::string& message)
         return false;
     }
 
-    OutputDebugStringA("SendMessage: Creating Teflon message\n");
-    // Create Teflon-compatible message
-    Message teflonMessage = CreateChatMessage(m_senderId, message);
+    // Try to parse the message as JSON first (from ChatForm)
+    Message teflonMessage;
+    try {
+        nlohmann::json jsonMsg = nlohmann::json::parse(message);
+        if (jsonMsg.contains("type") && jsonMsg.contains("messageId")) {
+            // This is a pre-formatted message from ChatForm, use it directly but fix the senderId
+            teflonMessage = jsonMsg.get<Message>();
+            teflonMessage.senderId = m_senderId; // Replace "You" with actual UUID
+            OutputDebugStringA("SendMessage: Using pre-formatted message from ChatForm, fixed senderId\n");
+        } else {
+            // This is a plain string, create a new message
+            teflonMessage = CreateChatMessage(m_senderId, message);
+            OutputDebugStringA("SendMessage: Creating new Teflon message for plain string\n");
+        }
+    } catch (const std::exception&) {
+        // If parsing fails, treat as plain string
+        teflonMessage = CreateChatMessage(m_senderId, message);
+        OutputDebugStringA("SendMessage: JSON parse failed, creating new Teflon message\n");
+    }
 
     // Track the message for ACK/NACK
     if (m_messageTracker) {
@@ -605,9 +621,28 @@ void NetworkManager::ProcessSocketData()
             // Process the incoming message (handles ACK/NACK and validation)
             ProcessIncomingMessage(teflonMessage);
         }
-        catch (const std::exception&)
+        catch (const nlohmann::json::parse_error& e)
         {
-            // Log JSON parse error
+            // Log JSON parse error with more details
+            OutputDebugStringA(("JSON parse error: " + std::string(e.what()) + "\n").c_str());
+            OutputDebugStringA(("Failed JSON data: " + jsonData + "\n").c_str());
+
+            SocketEventCallback socketCallback;
+            {
+                std::lock_guard<std::mutex> lock(m_callbackMutex);
+                socketCallback = m_socketEventCallback;
+            }
+            if (socketCallback)
+            {
+                socketCallback(SocketEventType::JsonParseError, "JSON parse error: " + jsonData);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            // Log other exceptions
+            OutputDebugStringA(("General exception: " + std::string(e.what()) + "\n").c_str());
+            OutputDebugStringA(("Failed JSON data: " + jsonData + "\n").c_str());
+
             SocketEventCallback socketCallback;
             {
                 std::lock_guard<std::mutex> lock(m_callbackMutex);
@@ -661,6 +696,9 @@ void NetworkManager::SendAcknowledgment(const std::string& originalMessageId, bo
     // Serialize and send
     nlohmann::json j = ackMessage;
     std::string jsonMessage = j.dump();
+
+    // Debug: Log the acknowledgment JSON being sent
+    OutputDebugStringA(("SendAcknowledgment: Sending ACK JSON: " + jsonMessage + "\n").c_str());
 
     int result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
                        (sockaddr*)&m_multicastAddr, sizeof(m_multicastAddr));

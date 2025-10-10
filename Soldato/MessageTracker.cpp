@@ -26,13 +26,25 @@ void MessageTracker::trackMessage(const Message& message) {
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
+    // Check if message already exists (upsert behavior)
+    auto it = m_messageMap.find(message.messageId);
+    if (it != m_messageMap.end()) {
+        std::cout << "[MessageTracker] Message already tracked, updating: " << message.messageId
+                  << " (sender: " << message.senderId << ")" << std::endl;
+        // Update existing message info but preserve acknowledgments
+        it->second->message = message;
+        it->second->timestamp = std::chrono::steady_clock::now();
+        return;
+    }
+
     m_messageMap[message.messageId] = std::make_unique<MessageInfo>(
         message,
         std::chrono::steady_clock::now()
     );
     m_totalMessagesSent++;
 
-    std::cout << "[MessageTracker] Tracking new message: " << message.messageId << std::endl;
+    std::cout << "[MessageTracker] Tracking new message: " << message.messageId
+              << " (sender: " << message.senderId << ")" << std::endl;
 }
 
 void MessageTracker::processAcknowledgment(const Message& ack) {
@@ -51,21 +63,18 @@ void MessageTracker::processAcknowledgment(const Message& ack) {
 
     MessageInfo* info = it->second.get();
 
-    // Don't process acknowledgments for messages we sent ourselves
-    if (info->message.senderId == m_instanceId) {
-        return;
-    }
-
+    // Store the acknowledgment regardless of who sent the original message
+    // This allows us to track ACKs for our own messages to show proper UI status
     info->acknowledgments[ack.senderId] = ack;
 
     if (ack.type == MessageType::ACK) {
         m_totalAcksReceived++;
         std::cout << "[MessageTracker] Received ACK for message: " << ack.originalMessageId.value()
-                  << " from: " << ack.senderId << std::endl;
+                  << " from: " << ack.senderId << " (original sender: " << info->message.senderId << ")" << std::endl;
     } else {
         m_totalNacksReceived++;
         std::cout << "[MessageTracker] Received NACK for message: " << ack.originalMessageId.value()
-                  << " from: " << ack.senderId << std::endl;
+                  << " from: " << ack.senderId << " (original sender: " << info->message.senderId << ")" << std::endl;
     }
 }
 
@@ -82,6 +91,28 @@ std::unordered_set<std::string> MessageTracker::getAcknowledgingParties(const st
         parties.insert(pair.first);
     }
     return parties;
+}
+
+size_t MessageTracker::getAcknowledgmentCount(const std::string& messageId) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto it = m_messageMap.find(messageId);
+    if (it == m_messageMap.end()) {
+        return 0;
+    }
+
+    return it->second->acknowledgments.size();
+}
+
+bool MessageTracker::hasAcknowledgment(const std::string& messageId) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto it = m_messageMap.find(messageId);
+    if (it == m_messageMap.end()) {
+        return false;
+    }
+
+    return !it->second->acknowledgments.empty();
 }
 
 std::unordered_map<std::string, long long> MessageTracker::getDeliveryStats() const {

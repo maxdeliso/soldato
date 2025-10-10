@@ -63,7 +63,6 @@ private:
     NetworkManager* m_networkManager;
     std::unique_ptr<ConnectDialog> m_connectDialog;
     std::unique_ptr<PeerPanel> m_peerPanel;
-    std::unique_ptr<MessageTracker> m_messageTracker;  // Add message tracker
     HFONT m_hFont;
 
     static LRESULT CALLBACK ChatFormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);

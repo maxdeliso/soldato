@@ -93,4 +93,20 @@ void from_json(const nlohmann::json& j, Message& msg) {
     } else {
         msg.originalMessageId = std::nullopt;
     }
+
+    // Check if body contains nested JSON and extract the actual message content
+    if (msg.type == MessageType::CHAT && msg.body.length() > 0 && msg.body[0] == '{') {
+        try {
+            nlohmann::json nestedJson = nlohmann::json::parse(msg.body);
+            if (nestedJson.contains("body") && nestedJson["body"].is_string()) {
+                // Extract the actual message content from the nested JSON
+                msg.body = nestedJson["body"].get<std::string>();
+                // Recalculate checksum for the extracted content
+                msg.checksum = Message::calculateChecksum(msg.body);
+            }
+        } catch (const std::exception&) {
+            // If parsing fails, keep the original body
+            // This handles cases where the body is not actually nested JSON
+        }
+    }
 }
