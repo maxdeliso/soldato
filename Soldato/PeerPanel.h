@@ -20,6 +20,7 @@ private:
     HWND m_hParent;
     HFONT m_hFont; // Member variable for the font
     HBRUSH m_hBkgBrush; // Member variable for the background brush
+    HPEN m_hNeonPen; // Member variable for the neon border pen
     HINSTANCE m_hInstance;
 
     std::vector<std::wstring> m_peerEntries;

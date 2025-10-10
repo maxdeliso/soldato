@@ -22,7 +22,7 @@ enum class PeerControlId {
 };
 
 PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
-    : m_hParent(parent), m_hWnd(nullptr), m_hPeerList(nullptr), m_hPeerCountLabel(nullptr), m_hFont(nullptr), m_hBkgBrush(nullptr), m_hInstance(hInstance) {
+    : m_hParent(parent), m_hWnd(nullptr), m_hPeerList(nullptr), m_hPeerCountLabel(nullptr), m_hFont(nullptr), m_hBkgBrush(nullptr), m_hNeonPen(nullptr), m_hInstance(hInstance) {
 
     DEBUG_LOG("PeerPanel: Constructor started\n");
 
@@ -37,6 +37,7 @@ PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
     wcex.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SOLDATO));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
     m_hBkgBrush = CreateSolidBrush(RGB(0, 15, 0)); // Dark green background
+    m_hNeonPen = CreatePen(PS_SOLID, 1, RGB(0, 255, 0)); // Bright green neon pen
     wcex.hbrBackground = m_hBkgBrush;
     wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = L"PeerPanelClass";
@@ -75,6 +76,9 @@ PeerPanel::~PeerPanel() {
     }
     if (m_hBkgBrush) {
         DeleteObject(m_hBkgBrush); // Clean up the GDI resource
+    }
+    if (m_hNeonPen) {
+        DeleteObject(m_hNeonPen); // Clean up the GDI resource
     }
     if (m_hWnd) {
         DestroyWindow(m_hWnd);
@@ -128,14 +132,11 @@ LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             RECT clientRect;
             GetClientRect(m_hWnd, &clientRect);
 
-            // Create gradient brush for cyberpunk background
-            HBRUSH darkBrush = CreateSolidBrush(RGB(0, 15, 0)); // Dark green-black
-            FillRect(hdc, &clientRect, darkBrush);
-            DeleteObject(darkBrush);
+            // Use pre-created background brush
+            FillRect(hdc, &clientRect, m_hBkgBrush);
 
-            // Add cyberpunk border
-            HPEN neonPen = CreatePen(PS_SOLID, 1, RGB(0, 255, 0)); // Bright green
-            HPEN oldPen = (HPEN)SelectObject(hdc, neonPen);
+            // Use pre-created neon pen for border
+            HPEN oldPen = (HPEN)SelectObject(hdc, m_hNeonPen);
 
             // Draw border
             MoveToEx(hdc, 0, 0, nullptr);
@@ -145,7 +146,6 @@ LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             LineTo(hdc, 0, 0);
 
             SelectObject(hdc, oldPen);
-            DeleteObject(neonPen);
 
             EndPaint(m_hWnd, &ps);
         }

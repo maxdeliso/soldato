@@ -112,7 +112,28 @@ m_connectDialog(nullptr),
 m_peerPanel(nullptr),
 m_hFont(nullptr),
 m_hInstance(hInstance),
-m_jsonMsg()
+m_jsonMsg(),
+// Initialize GDI objects to nullptr - will be created in constructor body
+m_hAckBgBrush(nullptr),
+m_hTimeoutBgBrush(nullptr),
+m_hNackBgBrush(nullptr),
+m_hOwnMessageBgBrush(nullptr),
+m_hDefaultBgBrush(nullptr),
+m_hBackgroundBrush(nullptr),
+m_hAckBorderPen(nullptr),
+m_hTimeoutBorderPen(nullptr),
+m_hNackBorderPen(nullptr),
+m_hOwnMessageBorderPen(nullptr),
+m_hDefaultBorderPen(nullptr),
+m_hNeonPen(nullptr),
+m_hAckIndicatorBrush(nullptr),
+m_hTimeoutIndicatorBrush(nullptr),
+m_hNackIndicatorBrush(nullptr),
+m_hPendingIndicatorBrush(nullptr),
+m_hAckIndicatorBorderPen(nullptr),
+m_hTimeoutIndicatorBorderPen(nullptr),
+m_hNackIndicatorBorderPen(nullptr),
+m_hPendingIndicatorBorderPen(nullptr)
 {
     // Resolve the proper module handle
     m_hInstance = ResolveModuleHandle(m_hInstance);
@@ -155,6 +176,9 @@ m_jsonMsg()
     {
         DEBUG_LOG("ChatForm: Window created successfully");
         CenterWindow();
+
+        // Create GDI objects for performance optimization
+        CreateGDIObjects();
 
         // Show window first to ensure proper sizing
         ShowWindow(m_hWnd, SW_SHOW);
@@ -230,6 +254,9 @@ ChatForm::~ChatForm()
         KillTimer(m_hWnd, 1);
     }
 
+    // Clean up GDI objects
+    DestroyGDIObjects();
+
     // Clean up the font
     if (m_hFont)
     {
@@ -246,6 +273,72 @@ ChatForm::~ChatForm()
         DestroyWindow(m_hWnd);
         m_hWnd = nullptr;
     }
+}
+
+void ChatForm::CreateGDIObjects()
+{
+    // Create background brushes
+    m_hAckBgBrush = CreateSolidBrush(RGB(5, 30, 5));        // Dark green for ACK messages
+    m_hTimeoutBgBrush = CreateSolidBrush(RGB(40, 10, 10));  // Dark red for timed out messages
+    m_hNackBgBrush = CreateSolidBrush(RGB(30, 10, 10));     // Dark red for NACK messages
+    m_hOwnMessageBgBrush = CreateSolidBrush(RGB(5, 15, 25)); // Dark blue for own messages
+    m_hDefaultBgBrush = CreateSolidBrush(RGB(5, 25, 5));    // Default dark green
+    m_hBackgroundBrush = CreateSolidBrush(CyberpunkTheme::BACKGROUND_COLOR); // Main window background
+
+    // Create border pens
+    m_hAckBorderPen = CreatePen(PS_SOLID, 1, RGB(10, 60, 10));
+    m_hTimeoutBorderPen = CreatePen(PS_SOLID, 1, RGB(80, 20, 20));
+    m_hNackBorderPen = CreatePen(PS_SOLID, 1, RGB(60, 20, 20));
+    m_hOwnMessageBorderPen = CreatePen(PS_SOLID, 1, RGB(10, 30, 50));
+    m_hDefaultBorderPen = CreatePen(PS_SOLID, 1, RGB(10, 50, 10));
+    m_hNeonPen = CreatePen(PS_SOLID, 1, CyberpunkTheme::GRID_COLOR);
+
+    // Create indicator brushes
+    m_hAckIndicatorBrush = CreateSolidBrush(RGB(100, 255, 100));      // Green for ACK
+    m_hTimeoutIndicatorBrush = CreateSolidBrush(RGB(255, 100, 100));  // Red for timeout
+    m_hNackIndicatorBrush = CreateSolidBrush(RGB(255, 150, 150));     // Light red for NACK
+    m_hPendingIndicatorBrush = CreateSolidBrush(RGB(255, 255, 100));  // Yellow for pending
+
+    // Create indicator border pens
+    m_hAckIndicatorBorderPen = CreatePen(PS_SOLID, 1, RGB(150, 255, 150));
+    m_hTimeoutIndicatorBorderPen = CreatePen(PS_SOLID, 1, RGB(255, 150, 150));
+    m_hNackIndicatorBorderPen = CreatePen(PS_SOLID, 1, RGB(255, 200, 200));
+    m_hPendingIndicatorBorderPen = CreatePen(PS_SOLID, 1, RGB(255, 255, 150));
+
+    DEBUG_LOG("ChatForm: GDI objects created successfully");
+}
+
+void ChatForm::DestroyGDIObjects()
+{
+    // Delete brushes
+    if (m_hAckBgBrush) { DeleteObject(m_hAckBgBrush); m_hAckBgBrush = nullptr; }
+    if (m_hTimeoutBgBrush) { DeleteObject(m_hTimeoutBgBrush); m_hTimeoutBgBrush = nullptr; }
+    if (m_hNackBgBrush) { DeleteObject(m_hNackBgBrush); m_hNackBgBrush = nullptr; }
+    if (m_hOwnMessageBgBrush) { DeleteObject(m_hOwnMessageBgBrush); m_hOwnMessageBgBrush = nullptr; }
+    if (m_hDefaultBgBrush) { DeleteObject(m_hDefaultBgBrush); m_hDefaultBgBrush = nullptr; }
+    if (m_hBackgroundBrush) { DeleteObject(m_hBackgroundBrush); m_hBackgroundBrush = nullptr; }
+
+    // Delete border pens
+    if (m_hAckBorderPen) { DeleteObject(m_hAckBorderPen); m_hAckBorderPen = nullptr; }
+    if (m_hTimeoutBorderPen) { DeleteObject(m_hTimeoutBorderPen); m_hTimeoutBorderPen = nullptr; }
+    if (m_hNackBorderPen) { DeleteObject(m_hNackBorderPen); m_hNackBorderPen = nullptr; }
+    if (m_hOwnMessageBorderPen) { DeleteObject(m_hOwnMessageBorderPen); m_hOwnMessageBorderPen = nullptr; }
+    if (m_hDefaultBorderPen) { DeleteObject(m_hDefaultBorderPen); m_hDefaultBorderPen = nullptr; }
+    if (m_hNeonPen) { DeleteObject(m_hNeonPen); m_hNeonPen = nullptr; }
+
+    // Delete indicator brushes
+    if (m_hAckIndicatorBrush) { DeleteObject(m_hAckIndicatorBrush); m_hAckIndicatorBrush = nullptr; }
+    if (m_hTimeoutIndicatorBrush) { DeleteObject(m_hTimeoutIndicatorBrush); m_hTimeoutIndicatorBrush = nullptr; }
+    if (m_hNackIndicatorBrush) { DeleteObject(m_hNackIndicatorBrush); m_hNackIndicatorBrush = nullptr; }
+    if (m_hPendingIndicatorBrush) { DeleteObject(m_hPendingIndicatorBrush); m_hPendingIndicatorBrush = nullptr; }
+
+    // Delete indicator border pens
+    if (m_hAckIndicatorBorderPen) { DeleteObject(m_hAckIndicatorBorderPen); m_hAckIndicatorBorderPen = nullptr; }
+    if (m_hTimeoutIndicatorBorderPen) { DeleteObject(m_hTimeoutIndicatorBorderPen); m_hTimeoutIndicatorBorderPen = nullptr; }
+    if (m_hNackIndicatorBorderPen) { DeleteObject(m_hNackIndicatorBorderPen); m_hNackIndicatorBorderPen = nullptr; }
+    if (m_hPendingIndicatorBorderPen) { DeleteObject(m_hPendingIndicatorBorderPen); m_hPendingIndicatorBorderPen = nullptr; }
+
+    DEBUG_LOG("ChatForm: GDI objects destroyed successfully");
 }
 
 LRESULT CALLBACK ChatForm::ChatFormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -362,14 +455,22 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
     case WM_APP_UPDATE_ACK:
         {
             DEBUG_LOG("ChatForm: WM_APP_UPDATE_ACK received");
-            // Update all message acknowledgment statuses
+            // Update only pending message acknowledgment statuses for performance
             bool needsRedraw = false;
-            if (m_networkManager) {
+            if (m_networkManager && !m_pendingMessages.empty()) {
                 // Get the MessageTracker from NetworkManager
                 auto networkTracker = m_networkManager->GetMessageTracker();
                 if (networkTracker) {
-                    for (auto& msg : m_chatMessages) {
-                        if (msg.isOwnMessage && !msg.messageId.empty()) {
+                    // Create a copy of pending messages to iterate over (in case we modify the set)
+                    std::unordered_set<std::string> pendingCopy = m_pendingMessages;
+
+                    for (const std::string& messageId : pendingCopy) {
+                        // Find the message in our deque
+                        auto msgIt = std::find_if(m_chatMessages.begin(), m_chatMessages.end(),
+                            [&messageId](const ChatMessage& msg) { return msg.messageId == messageId; });
+
+                        if (msgIt != m_chatMessages.end()) {
+                            auto& msg = *msgIt;
                             auto ackParties = networkTracker->getAcknowledgingParties(msg.messageId);
                             bool hadAck = msg.hasAck;
                             bool wasTimedOut = msg.isTimedOut;
@@ -404,6 +505,12 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                                          (msg.hasAck ? "true" : "false") + ", isTimedOut: " +
                                          (msg.isTimedOut ? "true" : "false"));
                                 needsRedraw = true;
+
+                                // Remove from pending set if message is acknowledged or timed out
+                                if (msg.hasAck || msg.isTimedOut) {
+                                    m_pendingMessages.erase(msg.messageId);
+                                    DEBUG_LOG("ChatForm: Removed message " + msg.messageId + " from pending set");
+                                }
                             }
                         }
                     }
@@ -523,14 +630,11 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             RECT clientRect;
             GetClientRect(m_hWnd, &clientRect);
 
-            // Create and use background brush
-            HBRUSH darkBrush = CreateSolidBrush(CyberpunkTheme::BACKGROUND_COLOR);
-            FillRect(hdc, &clientRect, darkBrush);
-            DeleteObject(darkBrush);
+            // Use pre-created background brush
+            FillRect(hdc, &clientRect, m_hBackgroundBrush);
 
-            // Create and select pen for grid and brackets
-            HPEN neonPen = CreatePen(PS_SOLID, 1, CyberpunkTheme::GRID_COLOR);
-            HPEN oldPen = (HPEN)SelectObject(hdc, neonPen);
+            // Use pre-created neon pen for grid and brackets
+            HPEN oldPen = (HPEN)SelectObject(hdc, m_hNeonPen);
 
             // Draw grid pattern
             for (int x = 0; x < clientRect.right; x += CyberpunkTheme::GRID_SPACING)
@@ -572,9 +676,8 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             MoveToEx(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y, nullptr);
             LineTo(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - endY);
 
-            // Restore original pen and cleanup
+            // Restore original pen
             SelectObject(hdc, oldPen);
-            DeleteObject(neonPen);
 
             EndPaint(m_hWnd, &ps);
         }
@@ -920,6 +1023,11 @@ void ChatForm::AddChatMessage(const std::wstring& sender, const std::wstring& me
     // Add to our message deque
     m_chatMessages.push_back(chatMsg);
 
+    // If this is our own message, add it to the pending set for optimized ACK checking
+    if (chatMsg.isOwnMessage && !chatMsg.messageId.empty()) {
+        m_pendingMessages.insert(chatMsg.messageId);
+    }
+
     // Add item to ListBox (for owner-drawn, we pass empty string)
     LRESULT index = SendMessage(m_hChatListBox, LB_ADDSTRING, 0, (LPARAM)L"");
 
@@ -940,6 +1048,31 @@ void ChatForm::AddChatMessage(const std::wstring& sender, const std::wstring& me
 
     // Note: Message tracking is now handled by NetworkManager to ensure
     // the same message ID is used for both sending and ACK tracking
+}
+
+void ChatForm::ClearChat()
+{
+    // Clear the ListBox first
+    if (m_hChatListBox) {
+        SendMessage(m_hChatListBox, LB_RESETCONTENT, 0, 0);
+    }
+
+    // Clear the message deque
+    m_chatMessages.clear();
+
+    // Clear the pending messages set
+    ClearPendingMessages();
+
+    // Add system message to indicate chat was cleared
+    AddChatMessage(L"System", L"Chat cleared.");
+
+    DEBUG_LOG("ChatForm: Chat cleared");
+}
+
+void ChatForm::ClearPendingMessages()
+{
+    m_pendingMessages.clear();
+    DEBUG_LOG("ChatForm: Pending messages cleared");
 }
 
 void ChatForm::SendChatMessage()
@@ -999,12 +1132,6 @@ void ChatForm::SendChatMessage()
     }
 }
 
-void ChatForm::ClearChat()
-{
-    SendMessage(m_hChatListBox, LB_RESETCONTENT, 0, 0);
-    m_chatMessages.clear();
-    AddChatMessage(L"System", L"Chat cleared.");
-}
 
 void ChatForm::FocusMessageInput()
 {
@@ -1399,13 +1526,13 @@ void ChatForm::OnMeasureItem(MEASUREITEMSTRUCT* pMeasureItem)
 
         // Get device context for text measurement
         HDC hdc = GetDC(m_hChatListBox);
-        RECT itemRect = {0, 0, pMeasureItem->itemWidth, 0};
+        RECT itemRect = {0, 0, static_cast<LONG>(pMeasureItem->itemWidth), 0};
 
         // Combine sender and message for calculation
         std::wstring fullText = L"[" + message.sender + L"]: " + message.message;
 
         // Use DrawText with DT_CALCRECT to get the required height
-        DrawTextW(hdc, fullText.c_str(), -1, &itemRect, DT_WORDBREAK | DT_CALCRECT);
+        DrawTextW(hdc, fullText.c_str(), static_cast<int>(fullText.length()), &itemRect, DT_WORDBREAK | DT_CALCRECT);
 
         ReleaseDC(m_hChatListBox, hdc);
 
@@ -1465,37 +1592,34 @@ void ChatForm::OnDrawItem(DRAWITEMSTRUCT* pDrawItem)
 
 void ChatForm::DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message)
 {
-    // Choose background color based on acknowledgment status
-    COLORREF bgColor;
-    COLORREF borderColor;
+    // Choose pre-created brush and pen based on acknowledgment status
+    HBRUSH hBrushToUse;
+    HPEN hPenToUse;
+
     if (message.isTimedOut) {
-        bgColor = RGB(40, 10, 10);  // Dark red for timed out
-        borderColor = RGB(80, 20, 20);
+        hBrushToUse = m_hTimeoutBgBrush;
+        hPenToUse = m_hTimeoutBorderPen;
     } else if (message.hasNack) {
-        bgColor = RGB(30, 10, 10);  // Dark red for NACK
-        borderColor = RGB(60, 20, 20);
+        hBrushToUse = m_hNackBgBrush;
+        hPenToUse = m_hNackBorderPen;
     } else if (message.hasAck) {
-        bgColor = RGB(5, 30, 5);    // Dark green for ACK
-        borderColor = RGB(10, 60, 10);
+        hBrushToUse = m_hAckBgBrush;
+        hPenToUse = m_hAckBorderPen;
     } else if (message.isOwnMessage) {
-        bgColor = RGB(5, 15, 25);   // Dark blue for own messages
-        borderColor = RGB(10, 30, 50);
+        hBrushToUse = m_hOwnMessageBgBrush;
+        hPenToUse = m_hOwnMessageBorderPen;
     } else {
-        bgColor = RGB(5, 25, 5);    // Default dark green
-        borderColor = RGB(10, 50, 10);
+        hBrushToUse = m_hDefaultBgBrush;
+        hPenToUse = m_hDefaultBorderPen;
     }
 
-    // Draw background
-    HBRUSH hBrush = CreateSolidBrush(bgColor);
-    FillRect(hdc, &rect, hBrush);
-    DeleteObject(hBrush);
+    // Draw background using pre-created brush
+    FillRect(hdc, &rect, hBrushToUse);
 
-    // Draw subtle border
-    HPEN hPen = CreatePen(PS_SOLID, 1, borderColor);
-    HPEN oldPen = (HPEN)SelectObject(hdc, hPen);
+    // Draw subtle border using pre-created pen
+    HPEN oldPen = (HPEN)SelectObject(hdc, hPenToUse);
     Rectangle(hdc, rect.left, rect.top, rect.right, rect.bottom);
     SelectObject(hdc, oldPen);
-    DeleteObject(hPen);
 }
 
 void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& message)
@@ -1520,46 +1644,42 @@ void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& me
         status = MessageStatus::Pending;
     }
 
-    // Get colors and symbol based on status
-    COLORREF indicatorColor;
-    COLORREF borderColor;
+    // Choose pre-created brush, pen, and text color based on status
+    HBRUSH hBrushToUse;
+    HPEN hPenToUse;
     COLORREF textColor;
 
     switch (status) {
         case MessageStatus::TimedOut:
-            indicatorColor = RGB(255, 100, 100);  // Red for timeout
-            borderColor = RGB(255, 150, 150);
+            hBrushToUse = m_hTimeoutIndicatorBrush;
+            hPenToUse = m_hTimeoutIndicatorBorderPen;
             textColor = RGB(255, 255, 255);  // White text for better contrast on red
             break;
         case MessageStatus::NegativelyAcknowledged:
-            indicatorColor = RGB(255, 150, 150);  // Light red for NACK
-            borderColor = RGB(255, 200, 200);
+            hBrushToUse = m_hNackIndicatorBrush;
+            hPenToUse = m_hNackIndicatorBorderPen;
             textColor = RGB(0, 0, 0);  // Black text for contrast on light red
             break;
         case MessageStatus::Acknowledged:
-            indicatorColor = RGB(100, 255, 100);  // Green for ACK
-            borderColor = RGB(150, 255, 150);
+            hBrushToUse = m_hAckIndicatorBrush;
+            hPenToUse = m_hAckIndicatorBorderPen;
             textColor = RGB(0, 0, 0);  // Black text for contrast on green
             break;
         case MessageStatus::Pending:
         default:
-            indicatorColor = RGB(255, 255, 100);  // Yellow for pending
-            borderColor = RGB(255, 255, 150);
+            hBrushToUse = m_hPendingIndicatorBrush;
+            hPenToUse = m_hPendingIndicatorBorderPen;
             textColor = RGB(0, 0, 0);  // Black text for contrast on yellow
             break;
     }
 
-    // Draw indicator background
-    HBRUSH hBrush = CreateSolidBrush(indicatorColor);
-    FillRect(hdc, &indicatorRect, hBrush);
-    DeleteObject(hBrush);
+    // Draw indicator background using pre-created brush
+    FillRect(hdc, &indicatorRect, hBrushToUse);
 
-    // Draw border
-    HPEN hPen = CreatePen(PS_SOLID, 1, borderColor);
-    HPEN oldPen = (HPEN)SelectObject(hdc, hPen);
+    // Draw border using pre-created pen
+    HPEN oldPen = (HPEN)SelectObject(hdc, hPenToUse);
     Rectangle(hdc, indicatorRect.left, indicatorRect.top, indicatorRect.right, indicatorRect.bottom);
     SelectObject(hdc, oldPen);
-    DeleteObject(hPen);
 
     // Draw status symbol with appropriate text color
     SetBkMode(hdc, TRANSPARENT);

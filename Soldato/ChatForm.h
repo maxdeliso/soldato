@@ -77,6 +77,31 @@ private:
     HFONT m_hFont;
     nlohmann::json m_jsonMsg;  // Reusable JSON object for message serialization
 
+    // Pre-created GDI objects for performance optimization
+    HBRUSH m_hAckBgBrush;           // Dark green for ACK messages
+    HBRUSH m_hTimeoutBgBrush;       // Dark red for timed out messages
+    HBRUSH m_hNackBgBrush;          // Dark red for NACK messages
+    HBRUSH m_hOwnMessageBgBrush;    // Dark blue for own messages
+    HBRUSH m_hDefaultBgBrush;       // Default dark green
+    HBRUSH m_hBackgroundBrush;      // Main window background
+    HPEN m_hAckBorderPen;           // Border pen for ACK messages
+    HPEN m_hTimeoutBorderPen;       // Border pen for timed out messages
+    HPEN m_hNackBorderPen;          // Border pen for NACK messages
+    HPEN m_hOwnMessageBorderPen;    // Border pen for own messages
+    HPEN m_hDefaultBorderPen;       // Default border pen
+    HPEN m_hNeonPen;                // Neon green pen for grid and brackets
+    HBRUSH m_hAckIndicatorBrush;    // Green indicator brush
+    HBRUSH m_hTimeoutIndicatorBrush;// Red indicator brush
+    HBRUSH m_hNackIndicatorBrush;   // Light red indicator brush
+    HBRUSH m_hPendingIndicatorBrush;// Yellow indicator brush
+    HPEN m_hAckIndicatorBorderPen;  // Green indicator border pen
+    HPEN m_hTimeoutIndicatorBorderPen; // Red indicator border pen
+    HPEN m_hNackIndicatorBorderPen; // Light red indicator border pen
+    HPEN m_hPendingIndicatorBorderPen; // Yellow indicator border pen
+
+    // Optimized ACK status checking
+    std::unordered_set<std::string> m_pendingMessages; // Only own messages that haven't been ACK'd or timed out
+
     static LRESULT CALLBACK ChatFormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -94,6 +119,10 @@ private:
     void OnDisconnect();
     void OnNetworkMessage(const std::string& sender, const std::string& message);
     void OnSocketEvent(SocketEventType eventType, const std::string& data);
+
+    // GDI object management
+    void CreateGDIObjects();
+    void DestroyGDIObjects();
 
     // Owner-drawn ListBox handlers
     void OnMeasureItem(MEASUREITEMSTRUCT* pMeasureItem);
@@ -120,4 +149,7 @@ public:
     void ClearChat();
     void FocusMessageInput();
     void UpdatePeerDisplay();
+
+    // Pending messages management
+    void ClearPendingMessages();
 };
