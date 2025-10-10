@@ -60,10 +60,40 @@ public:
         }
         Log(narrowMessage);
     }
+
+    // Optimized version for string literals with compile-time length
+    template<size_t N>
+    static void Log(const char(&message)[N]) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        Initialize();
+
+        if (m_logFile.is_open()) {
+            m_logFile << "[" << GetTimestamp() << "] " << message << std::endl;
+            m_logFile.flush();
+        }
+
+        // Also output to debug console in debug builds
+        #ifdef _DEBUG
+        OutputDebugStringA(message);
+        OutputDebugStringA("\n");
+        #endif
+    }
+
+    // Optimized version for wide string literals with compile-time length
+    template<size_t N>
+    static void Log(const wchar_t(&message)[N]) {
+        // Convert wide string literal to narrow string for logging
+        std::string narrowMessage;
+        narrowMessage.reserve(N - 1); // -1 to exclude null terminator
+        for (size_t i = 0; i < N - 1; ++i) {
+            narrowMessage += static_cast<char>(message[i]);
+        }
+        Log(narrowMessage);
+    }
 };
 
 #ifdef _DEBUG
     #define DEBUG_LOG(msg) DebugLogger::Log(msg)
 #else
-    #define DEBUG_LOG(msg) DebugLogger::Log(msg)
+    #define DEBUG_LOG(msg) ((void)0)  // Compile out in release builds
 #endif
