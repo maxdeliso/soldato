@@ -1400,17 +1400,10 @@ void ChatForm::ProcessRawJsonEvent(const std::string& data)
 {
     DEBUG_LOG("ChatForm: Processing RawJsonReceived event");
     try {
-        // The data comes as "Raw JSON: {json}" - extract just the JSON part
-        std::string jsonPart = data;
-        DEBUG_LOG("ChatForm: Original data: " + data);
+        // Parse the JSON message directly - no prefix extraction needed
+        DEBUG_LOG("ChatForm: Received JSON data: " + data);
 
-        size_t colonPos = jsonPart.find(": ");
-        if (colonPos != std::string::npos) {
-            jsonPart = jsonPart.substr(colonPos + 2); // Skip "Raw JSON: "
-            DEBUG_LOG("ChatForm: Extracted JSON part: " + jsonPart);
-        }
-
-        nlohmann::json message = nlohmann::json::parse(jsonPart);
+        nlohmann::json message = nlohmann::json::parse(data);
         DEBUG_LOG("ChatForm: Successfully parsed message JSON");
 
         // Handle different message types

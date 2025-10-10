@@ -595,7 +595,7 @@ void NetworkManager::ProcessSocketData()
         }
         if (socketCallback)
         {
-            socketCallback(SocketEventType::RawJsonReceived, "Raw JSON: " + jsonData);
+            socketCallback(SocketEventType::RawJsonReceived, jsonData);
         }
 
         // Try to deserialize Teflon-compatible JSON message
