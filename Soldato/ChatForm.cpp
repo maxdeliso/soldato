@@ -110,7 +110,8 @@ m_networkManager(nullptr),
 m_connectDialog(nullptr),
 m_peerPanel(nullptr),
 m_hFont(nullptr),
-m_hInstance(hInstance)
+m_hInstance(hInstance),
+m_jsonMsg()
 {
     // Resolve the proper module handle
     m_hInstance = ResolveModuleHandle(m_hInstance);
@@ -971,10 +972,9 @@ void ChatForm::SendChatMessage()
         // Add to chat history immediately (optimistic UI update) with message ID
         AddChatMessage(L"You", wMessage, msg.messageId);
 
-        // Send the message as JSON
-        nlohmann::json jsonMsg;
-        to_json(jsonMsg, msg);
-        std::string jsonString = jsonMsg.dump();
+        // Send the message as JSON (reuse the member JSON object)
+        to_json(m_jsonMsg, msg);
+        std::string jsonString = m_jsonMsg.dump();
 
         DEBUG_LOG("ChatForm: Calling SendMessageAsync...");
         m_networkManager->SendMessageAsync(jsonString);

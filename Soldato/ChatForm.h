@@ -74,6 +74,7 @@ private:
     std::unique_ptr<ConnectDialog> m_connectDialog;
     std::unique_ptr<PeerPanel> m_peerPanel;
     HFONT m_hFont;
+    nlohmann::json m_jsonMsg;  // Reusable JSON object for message serialization
 
     static LRESULT CALLBACK ChatFormProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
