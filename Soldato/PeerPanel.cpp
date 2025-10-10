@@ -71,17 +71,22 @@ PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
 }
 
 PeerPanel::~PeerPanel() {
+    // Clean up GDI objects in proper order
     if (m_hFont) {
-        DeleteObject(m_hFont); // Clean up the GDI resource
+        DeleteObject(m_hFont);
+        m_hFont = nullptr;
     }
     if (m_hBkgBrush) {
-        DeleteObject(m_hBkgBrush); // Clean up the GDI resource
+        DeleteObject(m_hBkgBrush);
+        m_hBkgBrush = nullptr;
     }
     if (m_hNeonPen) {
-        DeleteObject(m_hNeonPen); // Clean up the GDI resource
+        DeleteObject(m_hNeonPen);
+        m_hNeonPen = nullptr;
     }
     if (m_hWnd) {
         DestroyWindow(m_hWnd);
+        m_hWnd = nullptr;
     }
 }
 

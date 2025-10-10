@@ -5,12 +5,14 @@
 #include "StringUtils.h"
 #include <sstream>
 
-// Control IDs
-#define ID_MULTICAST_IP    2001
-#define ID_PORT            2002
-#define ID_USERNAME        2003
-#define ID_CONNECT_BTN     2004
-#define ID_CANCEL_BTN      2005
+// Control IDs - using enum class for type safety
+enum class ConnectControlId {
+    MulticastIP = 2001,
+    Port = 2002,
+    Username = 2003,
+    ConnectBtn = 2004,
+    CancelBtn = 2005
+};
 
 ConnectDialog::ConnectDialog(HWND parent, ConnectSuccessCallback on_success, HINSTANCE hInstance)
     : m_hParent(parent), m_hWnd(nullptr), m_on_success(on_success), m_hInstance(hInstance)
@@ -67,10 +69,10 @@ LRESULT ConnectDialog::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             int wmId = LOWORD(wParam);
             switch (wmId)
             {
-            case ID_CONNECT_BTN:
+            case static_cast<int>(ConnectControlId::ConnectBtn):
                 OnConnect();
                 break;
-            case ID_CANCEL_BTN:
+            case static_cast<int>(ConnectControlId::CancelBtn):
             case IDCANCEL:
                 Hide();
                 break;
@@ -93,11 +95,11 @@ LRESULT ConnectDialog::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 void ConnectDialog::InitializeControls()
 {
     // Get control handles
-    m_hMulticastIP = GetDlgItem(m_hWnd, ID_MULTICAST_IP);
-    m_hPort = GetDlgItem(m_hWnd, ID_PORT);
-    m_hUsername = GetDlgItem(m_hWnd, ID_USERNAME);
-    m_hConnectButton = GetDlgItem(m_hWnd, ID_CONNECT_BTN);
-    m_hCancelButton = GetDlgItem(m_hWnd, ID_CANCEL_BTN);
+    m_hMulticastIP = GetDlgItem(m_hWnd, static_cast<int>(ConnectControlId::MulticastIP));
+    m_hPort = GetDlgItem(m_hWnd, static_cast<int>(ConnectControlId::Port));
+    m_hUsername = GetDlgItem(m_hWnd, static_cast<int>(ConnectControlId::Username));
+    m_hConnectButton = GetDlgItem(m_hWnd, static_cast<int>(ConnectControlId::ConnectBtn));
+    m_hCancelButton = GetDlgItem(m_hWnd, static_cast<int>(ConnectControlId::CancelBtn));
 
     // Set default values
     SetWindowTextW(m_hMulticastIP, L"224.0.0.122");

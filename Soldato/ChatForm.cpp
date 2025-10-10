@@ -553,7 +553,7 @@ LRESULT ChatForm::OnUpdateAckStatus()
     // Update only pending message acknowledgment statuses for performance
     bool needsRedraw = false;
     if (m_networkManager && !m_pendingMessages.empty()) {
-        // Get the MessageTracker from NetworkManager
+        // Get the MessageTracker from NetworkManager once at the beginning
         auto networkTracker = m_networkManager->GetMessageTracker();
         if (networkTracker) {
             // Create a copy of pending messages to iterate over (in case we modify the set)
