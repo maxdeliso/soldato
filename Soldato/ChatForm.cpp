@@ -1422,16 +1422,19 @@ void ChatForm::OnDrawItem(DRAWITEMSTRUCT* pDrawItem)
 
     const ChatMessage& message = m_chatMessages[pDrawItem->itemID];
 
+    // Cache the HDC to avoid multiple memory reads
+    HDC hdc = pDrawItem->hDC;
+
     // Save the original device context state
-    int savedDC = SaveDC(pDrawItem->hDC);
+    int savedDC = SaveDC(hdc);
 
     // Set up clipping to prevent drawing outside the item bounds
-    IntersectClipRect(pDrawItem->hDC, pDrawItem->rcItem.left, pDrawItem->rcItem.top,
+    IntersectClipRect(hdc, pDrawItem->rcItem.left, pDrawItem->rcItem.top,
                      pDrawItem->rcItem.right, pDrawItem->rcItem.bottom);
 
     // Create a memory DC for double buffering to reduce flickering
-    HDC memDC = CreateCompatibleDC(pDrawItem->hDC);
-    HBITMAP memBitmap = CreateCompatibleBitmap(pDrawItem->hDC,
+    HDC memDC = CreateCompatibleDC(hdc);
+    HBITMAP memBitmap = CreateCompatibleBitmap(hdc,
         pDrawItem->rcItem.right - pDrawItem->rcItem.left,
         pDrawItem->rcItem.bottom - pDrawItem->rcItem.top);
     HBITMAP oldBitmap = (HBITMAP)SelectObject(memDC, memBitmap);
@@ -1446,7 +1449,7 @@ void ChatForm::OnDrawItem(DRAWITEMSTRUCT* pDrawItem)
     DrawMessageText(memDC, memRect, message);
 
     // Copy from memory DC to screen
-    BitBlt(pDrawItem->hDC, pDrawItem->rcItem.left, pDrawItem->rcItem.top,
+    BitBlt(hdc, pDrawItem->rcItem.left, pDrawItem->rcItem.top,
            pDrawItem->rcItem.right - pDrawItem->rcItem.left,
            pDrawItem->rcItem.bottom - pDrawItem->rcItem.top,
            memDC, 0, 0, SRCCOPY);
@@ -1457,7 +1460,7 @@ void ChatForm::OnDrawItem(DRAWITEMSTRUCT* pDrawItem)
     DeleteDC(memDC);
 
     // Restore the device context state
-    RestoreDC(pDrawItem->hDC, savedDC);
+    RestoreDC(hdc, savedDC);
 }
 
 void ChatForm::DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message)
