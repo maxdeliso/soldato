@@ -9,6 +9,7 @@
 #include <commctrl.h>
 #include <richedit.h>
 #include <sstream>
+#include <iomanip>
 #include <algorithm>
 #include <mutex>
 
@@ -273,9 +274,9 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 {
     // Debug: Log important messages
     if (message == WM_COMMAND || message == WM_CLOSE || message == WM_DESTROY || message == WM_SIZE) {
-        char debugMsg[256];
-        sprintf_s(debugMsg, "ChatForm: Received message 0x%04X", message);
-        DEBUG_LOG(debugMsg);
+        std::ostringstream oss;
+        oss << "ChatForm: Received message 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << message;
+        DEBUG_LOG(oss.str());
     }
 
     switch (message)
@@ -405,9 +406,9 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
             int wmId = LOWORD(wParam);
             int wmEvent = HIWORD(wParam);
 
-            char debugMsg[256];
-            sprintf_s(debugMsg, "ChatForm: WM_COMMAND received - ID: %d, Event: %d", wmId, wmEvent);
-            DEBUG_LOG(debugMsg);
+            std::ostringstream oss_cmd;
+            oss_cmd << "ChatForm: WM_COMMAND received - ID: " << wmId << ", Event: " << wmEvent;
+            DEBUG_LOG(oss_cmd.str());
 
             switch (wmId)
             {
@@ -447,8 +448,9 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                 PostQuitMessage(0);
                 break;
             default:
-                sprintf_s(debugMsg, "ChatForm: Unknown WM_COMMAND ID: %d (0x%04X)", wmId, wmId);
-                DEBUG_LOG(debugMsg);
+                std::ostringstream oss_unknown;
+                oss_unknown << "ChatForm: Unknown WM_COMMAND ID: " << wmId << " (0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << wmId << ")";
+                DEBUG_LOG(oss_unknown.str());
                 break;
             }
         }
@@ -483,9 +485,9 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         {
             int x = LOWORD(lParam);
             int y = HIWORD(lParam);
-            char debugMsg[256];
-            sprintf_s(debugMsg, "ChatForm: Left mouse button clicked at (%d, %d)", x, y);
-            DEBUG_LOG(debugMsg);
+            std::ostringstream oss_mouse;
+            oss_mouse << "ChatForm: Left mouse button clicked at (" << x << ", " << y << ")";
+            DEBUG_LOG(oss_mouse.str());
         }
         break;
 
@@ -614,15 +616,16 @@ void ChatForm::InitializeControls()
     int width = clientRect.right - clientRect.left;
     int height = clientRect.bottom - clientRect.top;
 
-    char debugMsg[256];
-    sprintf_s(debugMsg, "ChatForm: Window size - Width: %d, Height: %d", width, height);
-    DEBUG_LOG(debugMsg);
+    std::ostringstream oss_size;
+    oss_size << "ChatForm: Window size - Width: " << width << ", Height: " << height;
+    DEBUG_LOG(oss_size.str());
 
     // Calculate split layout: chat on left (70%), peer panel on right (30%)
     int chatWidth = static_cast<int>(width * 0.7);
 
-    sprintf_s(debugMsg, "ChatForm: Calculated chat width: %d", chatWidth);
-    DEBUG_LOG(debugMsg);
+    std::ostringstream oss_width;
+    oss_width << "ChatForm: Calculated chat width: " << chatWidth;
+    DEBUG_LOG(oss_width.str());
 
     // Create owner-drawn ListBox for chat messages with cyberpunk styling
     m_hChatListBox = CreateWindowExW(
@@ -650,10 +653,11 @@ void ChatForm::InitializeControls()
         // Debug: Check control position and size (client coordinates)
         RECT chatRect;
         GetClientRect(m_hChatListBox, &chatRect);
-        char debugMsg[256];
-        sprintf_s(debugMsg, "ChatForm: Chat ListBox client rect - Left: %d, Top: %d, Right: %d, Bottom: %d",
-                 chatRect.left, chatRect.top, chatRect.right, chatRect.bottom);
-        DEBUG_LOG(debugMsg);
+        std::ostringstream oss_chat_rect;
+        oss_chat_rect << "ChatForm: Chat ListBox client rect - Left: " << chatRect.left
+            << ", Top: " << chatRect.top << ", Right: " << chatRect.right
+            << ", Bottom: " << chatRect.bottom;
+        DEBUG_LOG(oss_chat_rect.str());
     } else {
         DEBUG_LOG("ChatForm: ERROR - Failed to create chat ListBox control");
     }
@@ -692,10 +696,11 @@ void ChatForm::InitializeControls()
         // Debug: Check control position and size (client coordinates)
         RECT inputRect;
         GetClientRect(m_hMessageInput, &inputRect);
-        char debugMsg[256];
-        sprintf_s(debugMsg, "ChatForm: Message input client rect - Left: %d, Top: %d, Right: %d, Bottom: %d",
-                 inputRect.left, inputRect.top, inputRect.right, inputRect.bottom);
-        DEBUG_LOG(debugMsg);
+        std::ostringstream oss_input_rect;
+        oss_input_rect << "ChatForm: Message input client rect - Left: " << inputRect.left
+            << ", Top: " << inputRect.top << ", Right: " << inputRect.right
+            << ", Bottom: " << inputRect.bottom;
+        DEBUG_LOG(oss_input_rect.str());
     } else {
         DEBUG_LOG("ChatForm: ERROR - Failed to create message input control");
     }
@@ -716,9 +721,10 @@ void ChatForm::InitializeControls()
     int buttonWidth = 70;
     int buttonHeight = 25;
 
-    sprintf_s(debugMsg, "ChatForm: Creating send button at (%d, %d) size %dx%d",
-              buttonX, buttonY, buttonWidth, buttonHeight);
-    DEBUG_LOG(debugMsg);
+    std::ostringstream oss3;
+    oss3 << "ChatForm: Creating send button at (" << buttonX << ", " << buttonY
+        << ") size " << buttonWidth << "x" << buttonHeight;
+    DEBUG_LOG(oss3.str());
 
     m_hSendButton = CreateWindowExW(
         0,
@@ -745,10 +751,11 @@ void ChatForm::InitializeControls()
         // Debug: Check control position and size (client coordinates)
         RECT buttonRect;
         GetClientRect(m_hSendButton, &buttonRect);
-        char debugMsg[256];
-        sprintf_s(debugMsg, "ChatForm: Send button client rect - Left: %d, Top: %d, Right: %d, Bottom: %d",
-                 buttonRect.left, buttonRect.top, buttonRect.right, buttonRect.bottom);
-        DEBUG_LOG(debugMsg);
+        std::ostringstream oss_button_rect;
+        oss_button_rect << "ChatForm: Send button client rect - Left: " << buttonRect.left
+            << ", Top: " << buttonRect.top << ", Right: " << buttonRect.right
+            << ", Bottom: " << buttonRect.bottom;
+        DEBUG_LOG(oss_button_rect.str());
     } else {
         DEBUG_LOG("ChatForm: ERROR - Failed to create send button control");
     }
