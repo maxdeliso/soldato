@@ -1578,13 +1578,13 @@ void ChatForm::DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& mes
     SetBkMode(hdc, TRANSPARENT);
 
     // Draw the sender's name in its color
-    std::wstring senderText = L"[" + message.sender + L"]: ";
     SetTextColor(hdc, UNPACK_SENDER_COLOR(message.packedColors));
     RECT senderRect = rect;
     senderRect.left += 5;
     senderRect.right -= 25; // Leave space for ACK indicator
 
     // Use DT_CALCRECT to find where the sender text ends
+    std::wstring senderText = L"[" + message.sender + L"]: ";
     DrawTextW(hdc, senderText.c_str(), -1, &senderRect, DT_SINGLELINE | DT_CALCRECT);
     RECT drawRect = rect;
     DrawTextW(hdc, senderText.c_str(), -1, &drawRect, DT_SINGLELINE);
