@@ -1508,20 +1508,45 @@ void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& me
     indicatorRect.bottom -= 2;
     indicatorRect.right -= 2;
 
+    // Determine message status once
+    MessageStatus status;
+    if (message.isTimedOut) {
+        status = MessageStatus::TimedOut;
+    } else if (message.hasNack) {
+        status = MessageStatus::NegativelyAcknowledged;
+    } else if (message.hasAck) {
+        status = MessageStatus::Acknowledged;
+    } else {
+        status = MessageStatus::Pending;
+    }
+
+    // Get colors and symbol based on status
     COLORREF indicatorColor;
     COLORREF borderColor;
-    if (message.isTimedOut) {
-        indicatorColor = RGB(255, 100, 100);  // Red for timeout
-        borderColor = RGB(255, 150, 150);
-    } else if (message.hasNack) {
-        indicatorColor = RGB(255, 150, 150);  // Light red for NACK
-        borderColor = RGB(255, 200, 200);
-    } else if (message.hasAck) {
-        indicatorColor = RGB(100, 255, 100);  // Green for ACK
-        borderColor = RGB(150, 255, 150);
-    } else {
-        indicatorColor = RGB(255, 255, 100);  // Yellow for pending
-        borderColor = RGB(255, 255, 150);
+    COLORREF textColor;
+
+    switch (status) {
+        case MessageStatus::TimedOut:
+            indicatorColor = RGB(255, 100, 100);  // Red for timeout
+            borderColor = RGB(255, 150, 150);
+            textColor = RGB(255, 255, 255);  // White text for better contrast on red
+            break;
+        case MessageStatus::NegativelyAcknowledged:
+            indicatorColor = RGB(255, 150, 150);  // Light red for NACK
+            borderColor = RGB(255, 200, 200);
+            textColor = RGB(0, 0, 0);  // Black text for contrast on light red
+            break;
+        case MessageStatus::Acknowledged:
+            indicatorColor = RGB(100, 255, 100);  // Green for ACK
+            borderColor = RGB(150, 255, 150);
+            textColor = RGB(0, 0, 0);  // Black text for contrast on green
+            break;
+        case MessageStatus::Pending:
+        default:
+            indicatorColor = RGB(255, 255, 100);  // Yellow for pending
+            borderColor = RGB(255, 255, 150);
+            textColor = RGB(0, 0, 0);  // Black text for contrast on yellow
+            break;
     }
 
     // Draw indicator background
@@ -1536,21 +1561,9 @@ void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& me
     SelectObject(hdc, oldPen);
     DeleteObject(hPen);
 
-    // Draw status symbol
+    // Draw status symbol with appropriate text color
     SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, RGB(0, 0, 0)); // Black text on colored background
-
-    // Determine message status using enum
-    MessageStatus status;
-    if (message.isTimedOut) {
-        status = MessageStatus::TimedOut;
-    } else if (message.hasNack) {
-        status = MessageStatus::NegativelyAcknowledged;
-    } else if (message.hasAck) {
-        status = MessageStatus::Acknowledged;
-    } else {
-        status = MessageStatus::Pending;
-    }
+    SetTextColor(hdc, textColor);
 
     std::wstring statusSymbol = GetStatusSymbol(status);
 
