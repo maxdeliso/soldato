@@ -265,8 +265,8 @@
     <ClInclude Include="ConnectDialog.h" />
     <ClInclude Include="DebugUtils.h" />
     <ClInclude Include="framework.h" />
-    <ClInclude Include="json.hpp" />
     <ClInclude Include="Message.h" />
+    <ClInclude Include="yyjson.h" />
     <ClInclude Include="MessageTracker.h" />
     <ClInclude Include="NetworkManager.h" />
     <ClInclude Include="PeerPanel.h" />
@@ -284,11 +284,15 @@
     <ClCompile Include="ConnectDialog.cpp" />
     <ClCompile Include="DebugUtils.cpp" />
     <ClCompile Include="Message.cpp" />
+    <ClCompile Include="JsonUtils.cpp" />
     <ClCompile Include="MessageTracker.cpp" />
     <ClCompile Include="NetworkManager.cpp" />
     <ClCompile Include="PeerPanel.cpp" />
     <ClCompile Include="PeerTracker.cpp" />
     <ClCompile Include="Soldato.cpp" />
+    <ClCompile Include="yyjson.c">
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Soldato.rc" />

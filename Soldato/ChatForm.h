@@ -76,7 +76,7 @@ private:
     std::unique_ptr<ConnectDialog> m_connectDialog;
     std::unique_ptr<PeerPanel> m_peerPanel;
     HFONT m_hFont;
-    nlohmann::json m_jsonMsg;  // Reusable JSON object for message serialization
+    // Note: JSON serialization now handled by JsonUtils.cpp using yyjson
 
     // Pre-created GDI objects for performance optimization
     HBRUSH m_hAckBgBrush;           // Dark green for ACK messages
@@ -121,8 +121,8 @@ private:
 
     // Refactored socket event handlers for better code organization
     void ProcessRawJsonEvent(const std::string& data);
-    void ProcessChatMessage(const nlohmann::json& message);
-    void ProcessAckMessage(const nlohmann::json& message);
+    void ProcessChatMessage(const Message& message);
+    void ProcessAckMessage(const Message& message);
 
     // Helper function to resolve proper module handle
     static HINSTANCE ResolveModuleHandle(HINSTANCE hInstance);

@@ -1,6 +1,7 @@
 #include "framework.h"
 #include "NetworkManager.h"
 #include "ChatForm.h"  // Include for custom message definitions
+#include "JsonUtils.h"
 #include <iostream>
 #include <sstream>
 #include <ctime>
@@ -353,22 +354,16 @@ bool NetworkManager::SendMessage(const std::string& message)
 
     // Try to parse the message as JSON first (from ChatForm)
     Message teflonMessage;
-    try {
-        nlohmann::json jsonMsg = nlohmann::json::parse(message);
-        if (jsonMsg.contains("type") && jsonMsg.contains("messageId")) {
-            // This is a pre-formatted message from ChatForm, use it directly but fix the senderId
-            teflonMessage = jsonMsg.get<Message>();
-            teflonMessage.senderId = m_senderId; // Replace "You" with actual UUID
-            OutputDebugStringA("SendMessage: Using pre-formatted message from ChatForm, fixed senderId\n");
-        } else {
-            // This is a plain string, create a new message
-            teflonMessage = CreateChatMessage(m_senderId, message);
-            OutputDebugStringA("SendMessage: Creating new Teflon message for plain string\n");
-        }
-    } catch (const std::exception&) {
-        // If parsing fails, treat as plain string
+    std::optional<Message> jsonMsgOpt = JsonUtils::DeserializeMessage(message);
+    if (jsonMsgOpt) {
+        // This is a pre-formatted message from ChatForm, use it directly but fix the senderId
+        teflonMessage = *jsonMsgOpt;
+        teflonMessage.senderId = m_senderId; // Replace "You" with actual UUID
+        OutputDebugStringA("SendMessage: Using pre-formatted message from ChatForm, fixed senderId\n");
+    } else {
+        // This is a plain string, create a new message
         teflonMessage = CreateChatMessage(m_senderId, message);
-        OutputDebugStringA("SendMessage: JSON parse failed, creating new Teflon message\n");
+        OutputDebugStringA("SendMessage: Creating new Teflon message for plain string\n");
     }
 
     // Track the message for ACK/NACK (lightweight - only UUID and sender)
@@ -379,8 +374,7 @@ bool NetworkManager::SendMessage(const std::string& message)
 
     // Serialize message as JSON
     OutputDebugStringA("SendMessage: Serializing message\n");
-    nlohmann::json j = teflonMessage;
-    std::string jsonMessage = j.dump();
+    std::string jsonMessage = JsonUtils::SerializeMessage(teflonMessage);
 
     OutputDebugStringA(("SendMessage: Calling sendto with " + std::to_string(jsonMessage.length()) + " bytes\n").c_str());
     int result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
@@ -599,32 +593,10 @@ void NetworkManager::ProcessSocketData()
         }
 
         // Try to deserialize Teflon-compatible JSON message
-        Message teflonMessage;
-        try {
-            nlohmann::json j = nlohmann::json::parse(jsonData);
-            teflonMessage = j.get<Message>();
-
-            // Extract sender IP address for peer tracking
-            char senderIP[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &fromAddr.sin_addr, senderIP, INET_ADDRSTRLEN);
-
-            // Update peer tracker with sender information
-            if (m_peerTracker) {
-                m_peerTracker->updatePeer(teflonMessage.senderId, std::string(senderIP));
-
-                // Notify the UI that the peer list has changed
-                if (m_hNotifyWnd) {
-                    PostMessage(m_hNotifyWnd, WM_APP_PEERS_UPDATED, 0, 0);
-                }
-            }
-
-            // Process the incoming message (handles ACK/NACK and validation)
-            ProcessIncomingMessage(teflonMessage);
-        }
-        catch (const nlohmann::json::parse_error& e)
-        {
-            // Log JSON parse error with more details
-            OutputDebugStringA(("JSON parse error: " + std::string(e.what()) + "\n").c_str());
+        std::optional<Message> teflonMessageOpt = JsonUtils::DeserializeMessage(jsonData);
+        if (!teflonMessageOpt) {
+            // JSON parse error
+            OutputDebugStringA("JSON parse error: Failed to deserialize message\n");
             OutputDebugStringA(("Failed JSON data: " + jsonData + "\n").c_str());
 
             SocketEventCallback parseErrorCallback;
@@ -636,23 +608,26 @@ void NetworkManager::ProcessSocketData()
             {
                 parseErrorCallback(SocketEventType::JsonParseError, "JSON parse error: " + jsonData);
             }
+            return;
         }
-        catch (const std::exception& e)
-        {
-            // Log other exceptions
-            OutputDebugStringA(("General exception: " + std::string(e.what()) + "\n").c_str());
-            OutputDebugStringA(("Failed JSON data: " + jsonData + "\n").c_str());
+        Message teflonMessage = *teflonMessageOpt;
 
-            SocketEventCallback generalErrorCallback;
-            {
-                std::lock_guard<std::mutex> generalErrorLock(m_callbackMutex);
-                generalErrorCallback = m_socketEventCallback;
-            }
-            if (generalErrorCallback)
-            {
-                generalErrorCallback(SocketEventType::JsonParseError, "JSON parse error: " + jsonData);
+        // Extract sender IP address for peer tracking
+        char senderIP[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &fromAddr.sin_addr, senderIP, INET_ADDRSTRLEN);
+
+        // Update peer tracker with sender information
+        if (m_peerTracker) {
+            m_peerTracker->updatePeer(teflonMessage.senderId, std::string(senderIP));
+
+            // Notify the UI that the peer list has changed
+            if (m_hNotifyWnd) {
+                PostMessage(m_hNotifyWnd, WM_APP_PEERS_UPDATED, 0, 0);
             }
         }
+
+        // Process the incoming message (handles ACK/NACK and validation)
+        ProcessIncomingMessage(teflonMessage);
     }
     else if (bytesReceived == SOCKET_ERROR)
     {
@@ -694,8 +669,7 @@ void NetworkManager::SendAcknowledgment(const std::string& originalMessageId, bo
     Message ackMessage = CreateAcknowledgment(m_senderId, originalMessageId, isPositive);
 
     // Serialize and send
-    nlohmann::json j = ackMessage;
-    std::string jsonMessage = j.dump();
+    std::string jsonMessage = JsonUtils::SerializeMessage(ackMessage);
 
     // Debug: Log the acknowledgment JSON being sent
     OutputDebugStringA(("SendAcknowledgment: Sending ACK JSON: " + jsonMessage + "\n").c_str());

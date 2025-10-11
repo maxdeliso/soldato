@@ -2,7 +2,6 @@
 
 #include <string>
 #include <optional>
-#include "json.hpp"
 
 /**
  * Message types supported by the system (matching Teflon's MessageType enum)
@@ -63,6 +62,4 @@ struct Message {
     static MessageType stringToMessageType(const std::string& typeStr);
 };
 
-// JSON serialization functions for nlohmann/json
-void to_json(nlohmann::json& j, const Message& msg);
-void from_json(const nlohmann::json& j, Message& msg);
+// JSON serialization functions are now in JsonUtils.cpp using yyjson

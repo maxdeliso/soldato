@@ -58,44 +58,5 @@ MessageType Message::stringToMessageType(const std::string& typeStr) {
     return MessageType::CHAT; // Default fallback
 }
 
-// JSON serialization function
-void to_json(nlohmann::json& j, const Message& msg) {
-    j = nlohmann::json{
-        {"senderId", msg.senderId},
-        {"body", msg.body},
-        {"messageId", msg.messageId},
-        {"type", Message::messageTypeToString(msg.type)},
-        {"checksum", msg.checksum}
-    };
-
-    // Add originalMessageId only if it has a value
-    if (msg.originalMessageId.has_value()) {
-        j["originalMessageId"] = msg.originalMessageId.value();
-    }
-}
-
-// JSON deserialization function - optimized using JSON pointer literals
-void from_json(const nlohmann::json& j, Message& msg) {
-    using namespace nlohmann::literals;
-
-    // Use JSON pointer literals for efficient property access
-    msg.senderId = j["/senderId"_json_pointer];
-    msg.body = j["/body"_json_pointer];
-    msg.messageId = j["/messageId"_json_pointer];
-
-    // Handle type conversion
-    std::string typeStr = j["/type"_json_pointer];
-    if (!typeStr.empty()) {
-        msg.type = Message::stringToMessageType(typeStr);
-    }
-
-    // Handle optional originalMessageId
-    if (j.contains("originalMessageId")) {
-        msg.originalMessageId = j["/originalMessageId"_json_pointer];
-    } else {
-        msg.originalMessageId = std::nullopt;
-    }
-
-    // Extract checksum (integer)
-    msg.checksum = j["/checksum"_json_pointer];
-}
+// Note: JSON serialization/deserialization functions have been moved to JsonUtils.cpp
+// using yyjson library for better performance
