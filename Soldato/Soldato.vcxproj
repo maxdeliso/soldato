@@ -155,7 +155,7 @@
       <LinkIncremental>false</LinkIncremental>
       <StripPrivateSymbols>true</StripPrivateSymbols>
       <OptimizeForWindows98>true</OptimizeForWindows98>
-      <AdditionalOptions>/MERGE:.rdata=.text %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/MERGE:.rdata=.text /MAP /MAPINFO:EXPORTS /DISASM %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -204,7 +204,7 @@
       <LinkIncremental>false</LinkIncremental>
       <StripPrivateSymbols>true</StripPrivateSymbols>
       <OptimizeForWindows98>true</OptimizeForWindows98>
-      <AdditionalOptions>/MERGE:.rdata=.text %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/MERGE:.rdata=.text /MAP /MAPINFO:EXPORTS /DISASM %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
@@ -251,7 +251,7 @@
       <LinkIncremental>false</LinkIncremental>
       <StripPrivateSymbols>true</StripPrivateSymbols>
       <OptimizeForWindows98>true</OptimizeForWindows98>
-      <AdditionalOptions>/MERGE:.rdata=.text %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/MERGE:.rdata=.text /MAP /MAPINFO:EXPORTS /DISASM %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
