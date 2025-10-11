@@ -13,7 +13,7 @@ jobs:
         include:
           - platform: x86
             configuration: Release
-            arch: Win32
+            arch: x86
             runner: windows-latest
           - platform: x64
             configuration: Release
@@ -58,8 +58,8 @@ jobs:
     - name: Create release directory
       run: |
         mkdir release-${{ matrix.platform }}
-        if ("${{ matrix.arch }}" -eq "Win32") {
-          copy "x64\Release\Soldato.exe" "release-${{ matrix.platform }}\Soldato.exe"
+        if ("${{ matrix.arch }}" -eq "x86") {
+          copy "x86\${{ matrix.configuration }}\Soldato.exe" "release-${{ matrix.platform }}\Soldato.exe"
         } elseif ("${{ matrix.arch }}" -eq "ARM64") {
           copy "ARM64\${{ matrix.configuration }}\Soldato.exe" "release-${{ matrix.platform }}\Soldato.exe"
         } else {
