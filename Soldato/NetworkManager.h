@@ -11,7 +11,7 @@
 #include <thread>
 #include <condition_variable>
 #include <functional>
-#include "json.hpp"
+// Note: json.hpp removed, now using yyjson via JsonUtils
 #include "Message.h"
 #include "MessageTracker.h"
 #include "PeerTracker.h"

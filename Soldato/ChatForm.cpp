@@ -7,7 +7,7 @@
 #include "NetworkManager.h"
 #include "JsonUtils.h"
 #include "Version.h"
-#include "json.hpp"
+// Note: json.hpp removed, now using yyjson via JsonUtils
 #include <commctrl.h>
 #include <richedit.h>
 #include <sstream>
@@ -114,7 +114,7 @@ m_connectDialog(nullptr),
 m_peerPanel(nullptr),
 m_hFont(nullptr),
 m_hInstance(hInstance),
-m_jsonMsg(),
+// Note: m_jsonMsg removed, now using yyjson via JsonUtils
 // Initialize GDI objects to nullptr - will be created in constructor body
 m_hAckBgBrush(nullptr),
 m_hTimeoutBgBrush(nullptr),
@@ -1139,9 +1139,8 @@ void ChatForm::SendChatMessage()
         // Add to chat history immediately (optimistic UI update) with message ID
         AddChatMessage(L"You", wMessage, msg.messageId);
 
-        // Send the message as JSON (reuse the member JSON object)
-        to_json(m_jsonMsg, msg);
-        std::string jsonString = m_jsonMsg.dump();
+        // Send the message as JSON using yyjson
+        std::string jsonString = JsonUtils::SerializeMessage(msg);
 
         DEBUG_LOG("ChatForm: Calling SendMessageAsync...");
         m_networkManager->SendMessageAsync(jsonString);
@@ -1303,24 +1302,21 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
     // Check if this is an acknowledgment message or regular JSON message
     if (m_networkManager) {
         // Try to parse as JSON
-        try {
-            nlohmann::json jsonMsg = nlohmann::json::parse(message);
-            // Use optimized JSON utility to avoid redundant key hashing
-            std::string msgType = JsonUtils::getString(jsonMsg, "type");
-            if (!msgType.empty()) {
-                DEBUG_LOG("ChatForm: Parsed JSON message type: " + msgType);
+        std::optional<Message> msgOpt = JsonUtils::DeserializeMessage(message);
+        if (msgOpt) {
+            Message msg = *msgOpt;
+            std::string msgType = Message::messageTypeToString(msg.type);
+            DEBUG_LOG("ChatForm: Parsed JSON message type: " + msgType);
 
-                if (msgType == "ACK" || msgType == "NACK") {
-                    // This is an acknowledgment, process it
-                    Message ackMsg;
-                    from_json(jsonMsg, ackMsg);
-                    DEBUG_LOG("ChatForm: Processing " + msgType + " for message: " + ackMsg.originalMessageId.value_or("unknown"));
+            if (msgType == "ACK" || msgType == "NACK") {
+                // This is an acknowledgment, process it
+                DEBUG_LOG("ChatForm: Processing " + msgType + " for message: " + msg.originalMessageId.value_or("unknown"));
 
                     // Use NetworkManager's MessageTracker
                     if (m_networkManager) {
                         auto networkTracker = m_networkManager->GetMessageTracker();
                         if (networkTracker) {
-                            networkTracker->processAcknowledgment(ackMsg);
+                            networkTracker->processAcknowledgment(msg);
                         }
                     }
 
@@ -1328,16 +1324,15 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
                     PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
                     DEBUG_LOG("ChatForm: Posted WM_APP_UPDATE_ACK to UI thread");
                     return; // Don't display ACK messages in chat and don't process further
-                } else if (msgType == "CHAT") {
-                    // This is a regular chat message, extract the content
-                    Message chatMsg;
-                    from_json(jsonMsg, chatMsg);
+            } else if (msgType == "CHAT") {
+                // This is a regular chat message, extract the content
+                Message chatMsg = msg;
 
-                    // Don't process our own messages here - they're already in the UI from SendChatMessage()
-                    if (chatMsg.senderId == m_networkManager->GetSenderId()) {
-                        DEBUG_LOG("ChatForm: OnNetworkMessage ignoring own message to prevent duplication: " + chatMsg.messageId);
-                        return;
-                    }
+                // Don't process our own messages here - they're already in the UI from SendChatMessage()
+                if (chatMsg.senderId == m_networkManager->GetSenderId()) {
+                    DEBUG_LOG("ChatForm: OnNetworkMessage ignoring own message to prevent duplication: " + chatMsg.messageId);
+                    return;
+                }
 
                     // Queue the message for UI thread processing (notify-and-pull pattern)
                     if (m_networkManager) {
@@ -1348,16 +1343,10 @@ void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& me
                     return;
                 }
             }
-        } catch (const std::exception& e) {
+        } else {
             // IF PARSING FAILS, it's a plain string message (e.g., "Network connection established").
             // Handle it gracefully instead of just logging an error.
-            DEBUG_LOG("ChatForm: JSON parsing failed: " + std::string(e.what()) + ". Treating as plain text.");
-            (void)e; // Suppress unused variable warning
-
-            // Fall through to the plain text handling logic below.
-        } catch (...) {
-            DEBUG_LOG("ChatForm: JSON parsing failed with unknown exception");
-        }
+            DEBUG_LOG("ChatForm: JSON parsing failed. Treating as plain text.");
     }
 
     // Fallback for non-JSON messages - queue for UI thread processing
@@ -1398,45 +1387,34 @@ void ChatForm::OnSocketEvent(SocketEventType eventType, const std::string& data)
 void ChatForm::ProcessRawJsonEvent(const std::string& data)
 {
     DEBUG_LOG("ChatForm: Processing RawJsonReceived event");
-    try {
-        // Parse the JSON message directly - no prefix extraction needed
-        DEBUG_LOG("ChatForm: Received JSON data: " + data);
+    // Parse the JSON message directly - no prefix extraction needed
+    DEBUG_LOG("ChatForm: Received JSON data: " + data);
 
-        nlohmann::json message = nlohmann::json::parse(data);
+    std::optional<Message> msgOpt = JsonUtils::DeserializeMessage(data);
+    if (msgOpt) {
+        Message message = *msgOpt;
         DEBUG_LOG("ChatForm: Successfully parsed message JSON");
 
         // Handle different message types
-        if (message.contains("type")) {
-            std::string messageType = message["type"];
-            if (messageType == "CHAT") {
-                ProcessChatMessage(message);
-            } else if (messageType == "ACK") {
-                ProcessAckMessage(message);
-            } else {
-                DEBUG_LOG("ChatForm: Unknown message type: " + messageType);
-            }
+        std::string messageType = Message::messageTypeToString(message.type);
+        if (messageType == "CHAT") {
+            ProcessChatMessage(message);
+        } else if (messageType == "ACK") {
+            ProcessAckMessage(message);
         } else {
-            DEBUG_LOG("ChatForm: Message doesn't contain required fields");
+            DEBUG_LOG("ChatForm: Unknown message type: " + messageType);
         }
-    } catch (const std::exception& e) {
-        DEBUG_LOG("ChatForm: Failed to parse message: " + std::string(e.what()));
-        (void)e; // Suppress unused variable warning
+    } else {
+        DEBUG_LOG("ChatForm: Failed to parse message or message doesn't contain required fields");
     }
 }
 
-void ChatForm::ProcessChatMessage(const nlohmann::json& message)
+void ChatForm::ProcessChatMessage(const Message& message)
 {
-    using namespace nlohmann::literals;
-
-    if (!message.contains("messageId") || !message.contains("body") || !message.contains("senderId")) {
-        DEBUG_LOG("ChatForm: CHAT message missing required fields");
-        return;
-    }
-
-    // Use JSON pointer literals for efficient property access
-    std::string messageId = message["/messageId"_json_pointer];
-    std::string body = message["/body"_json_pointer];
-    std::string senderId = message["/senderId"_json_pointer];
+    // Use direct Message object fields
+    std::string messageId = message.messageId;
+    std::string body = message.body;
+    std::string senderId = message.senderId;
 
     DEBUG_LOG("ChatForm: CHAT message - ID: " + messageId + ", senderId: " + senderId);
 
@@ -1449,30 +1427,20 @@ void ChatForm::ProcessChatMessage(const nlohmann::json& message)
     DEBUG_LOG("ChatForm: Processing message from other user: " + senderId);
 }
 
-void ChatForm::ProcessAckMessage(const nlohmann::json& message)
+void ChatForm::ProcessAckMessage(const Message& message)
 {
-    using namespace nlohmann::literals;
-
-    // This is an ACK message - process it directly using JSON pointer literals
-    std::string ackMessageId = message["/messageId"_json_pointer];
-    std::string originalMessageId = message["/originalMessageId"_json_pointer];
-    std::string ackSenderId = message["/senderId"_json_pointer];
+    // This is an ACK message - process it directly using Message object fields
+    std::string ackMessageId = message.messageId;
+    std::string originalMessageId = message.originalMessageId.value_or("");
+    std::string ackSenderId = message.senderId;
 
     DEBUG_LOG("ChatForm: Processing ACK - Message ID: " + ackMessageId + ", Original ID: " + originalMessageId + ", From: " + ackSenderId);
-
-    // Create ACK message for MessageTracker
-    Message ackMsg;
-    ackMsg.senderId = ackSenderId;
-    ackMsg.messageId = ackMessageId;
-    ackMsg.type = MessageType::ACK;
-    ackMsg.originalMessageId = originalMessageId;
-    ackMsg.body = message["/body"_json_pointer];
 
     // Use NetworkManager's MessageTracker
     if (m_networkManager) {
         auto networkTracker = m_networkManager->GetMessageTracker();
         if (networkTracker) {
-            networkTracker->processAcknowledgment(ackMsg);
+            networkTracker->processAcknowledgment(message);
         }
     }
     DEBUG_LOG("ChatForm: Processed ACK for message: " + originalMessageId);
