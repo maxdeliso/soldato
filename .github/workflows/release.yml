@@ -47,25 +47,26 @@ jobs:
 
     - name: Build ${{ matrix.platform }}
       run: |
-        msbuild Soldato.sln ^
-          /p:Configuration=${{ matrix.configuration }} ^
-          /p:Platform=${{ matrix.arch }} ^
-          /p:PlatformToolset=v143 ^
-          /p:WindowsTargetPlatformVersion=10.0 ^
-          /m ^
+        msbuild Soldato.sln `
+          /p:Configuration=${{ matrix.configuration }} `
+          /p:Platform=${{ matrix.arch }} `
+          /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=10.0 `
+          /m `
           /v:minimal
 
     - name: Create release directory
       run: |
         mkdir release-${{ matrix.platform }}
-        if "${{ matrix.arch }}" == "Win32" (
+        if ("${{ matrix.arch }}" -eq "Win32") {
           copy "x64\Release\Soldato.exe" "release-${{ matrix.platform }}\Soldato.exe"
-        ) else if "${{ matrix.arch }}" == "ARM64" (
+        } elseif ("${{ matrix.arch }}" -eq "ARM64") {
           copy "ARM64\${{ matrix.configuration }}\Soldato.exe" "release-${{ matrix.platform }}\Soldato.exe"
-        ) else (
+        } else {
           copy "x64\${{ matrix.configuration }}\Soldato.exe" "release-${{ matrix.platform }}\Soldato.exe"
-        )
-        copy "Soldato\app.ico" "release-${{ matrix.platform }}\app.ico" 2>nul || echo "app.ico not found, skipping"
+        }
+        try { copy "Soldato\app.ico" "release-${{ matrix.platform }}\app.ico" } catch { Write-Host "app.ico not found, skipping" }
+      shell: pwsh
 
     - name: Create ZIP archive
       run: |
