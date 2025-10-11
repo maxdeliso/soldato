@@ -34,6 +34,17 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Update version with GitHub Actions build number
+      id: version
+      run: |
+        .\scripts\update-version-github.ps1
+        echo "version=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+        echo "display_version=$(git describe --tags --abbrev=0 2>$null | sed 's/^v//')" >> $env:GITHUB_OUTPUT
+        echo "build_number=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+      shell: pwsh
 
     - name: Setup MSVC
       uses: microsoft/setup-msbuild@v2
@@ -45,6 +56,8 @@ jobs:
       run: |
         echo "Visual Studio version:"
         & "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && where cl
+        echo "Compiler version:"
+        cl
         echo "MSBuild version:"
         msbuild /version
         echo "Windows SDK version:"

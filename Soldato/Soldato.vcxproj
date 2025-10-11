@@ -261,8 +261,11 @@
     <ClInclude Include="PeerPanel.h" />
     <ClInclude Include="PeerTracker.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="StringUtils.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="JsonUtils.h" />
     <ClInclude Include="Soldato.h" />
+    <ClInclude Include="Version.h" />
     <ClInclude Include="WinsockManager.h" />
   </ItemGroup>
   <ItemGroup>

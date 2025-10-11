@@ -6,6 +6,7 @@
 #include "Message.h"
 #include "NetworkManager.h"
 #include "JsonUtils.h"
+#include "Version.h"
 #include "json.hpp"
 #include <commctrl.h>
 #include <richedit.h>
@@ -13,6 +14,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <mutex>
+#include <shellapi.h>
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -1203,7 +1205,7 @@ void ChatForm::OnDisconnect()
         try
         {
             // Log disconnect attempt
-            AddChatMessage(L"SYSTEM", L"DISCONNECTING FROM NEURAL NETWORK...");
+            AddChatMessage(L"SYSTEM", L"DISCONNECTING FROM NETWORK...");
 
             // Disconnect from network
             m_networkManager->Disconnect();
@@ -1212,7 +1214,7 @@ void ChatForm::OnDisconnect()
             UpdateConnectionUI();
 
             // Log successful disconnect
-            AddChatMessage(L"SYSTEM", L"NEURAL LINK TERMINATED SUCCESSFULLY");
+            AddChatMessage(L"SYSTEM", L"CONNECTION TERMINATED SUCCESSFULLY");
             AddChatMessage(L"SYSTEM", L"READY FOR NEW CONNECTION...");
         }
         catch (const std::exception& e)
@@ -1242,7 +1244,7 @@ void ChatForm::OnDisconnect()
     }
     else
     {
-        AddChatMessage(L"SYSTEM", L"NOT CURRENTLY CONNECTED TO NEURAL NETWORK");
+        AddChatMessage(L"SYSTEM", L"NOT CURRENTLY CONNECTED TO NETWORK");
     }
 }
 
@@ -1488,12 +1490,28 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     switch (message)
     {
     case WM_INITDIALOG:
+        {
+            // Set the version string dynamically
+            std::wstring versionText = L"Soldato Version "
+                + std::to_wstring(SOLDATO_VERSION_MAJOR) + L"."
+                + std::to_wstring(SOLDATO_VERSION_MINOR) + L"."
+                + std::to_wstring(SOLDATO_VERSION_PATCH) + L"\n"
+                + L"Build " + std::to_wstring(SOLDATO_VERSION_BUILD);
+
+            SetDlgItemTextW(hDlg, IDC_VERSION_TEXT, versionText.c_str());
+        }
         return (INT_PTR)TRUE;
 
     case WM_COMMAND:
         if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
         {
             EndDialog(hDlg, LOWORD(wParam));
+            return (INT_PTR)TRUE;
+        }
+        else if (LOWORD(wParam) == ID_GITHUB_LINK)
+        {
+            // Open GitHub repository in default browser
+            ShellExecute(nullptr, L"open", L"https://github.com/maxdeliso/soldato", nullptr, nullptr, SW_SHOWNORMAL);
             return (INT_PTR)TRUE;
         }
         break;

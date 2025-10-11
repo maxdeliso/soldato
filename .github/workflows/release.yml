@@ -32,6 +32,15 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Update version with GitHub Actions build number
+      id: version
+      run: |
+        .\scripts\update-version-github.ps1
+        echo "version=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+        echo "display_version=$(git describe --tags --abbrev=0 2>$null | sed 's/^v//' || echo '1.0.0')" >> $env:GITHUB_OUTPUT
+        echo "build_number=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v1.3
 
@@ -41,16 +50,6 @@ jobs:
         vs-version: '17.0'
         components: 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64 Microsoft.VisualStudio.Component.VC.Tools.ARM64 Microsoft.VisualStudio.Component.Windows10SDK.19041'
 
-    - name: Get version from tag
-      id: get_version
-      run: |
-        if [ "${{ github.event_name }}" = "push" ]; then
-          VERSION=${GITHUB_REF#refs/tags/}
-        else
-          VERSION="dev-$(date +%Y%m%d-%H%M%S)"
-        fi
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Version: $VERSION"
 
     - name: Build ${{ matrix.platform }}
       run: |
@@ -76,13 +75,13 @@ jobs:
 
     - name: Create ZIP archive
       run: |
-        powershell Compress-Archive -Path "release-${{ matrix.platform }}\*" -DestinationPath "Soldato-${{ steps.get_version.outputs.version }}-${{ matrix.platform }}.zip"
+        powershell Compress-Archive -Path "release-${{ matrix.platform }}\*" -DestinationPath "Soldato-${{ steps.version.outputs.display_version }}-${{ matrix.platform }}.zip"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: Soldato-${{ matrix.platform }}
-        path: Soldato-${{ steps.get_version.outputs.version }}-${{ matrix.platform }}.zip
+        path: Soldato-${{ steps.version.outputs.display_version }}-${{ matrix.platform }}.zip
         retention-days: 30
 
   release:
@@ -94,12 +93,14 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Get version from tag
-      id: get_version
+    - name: Update version with GitHub Actions build number
+      id: version
       run: |
-        VERSION=${GITHUB_REF#refs/tags/}
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Version: $VERSION"
+        .\scripts\update-version-github.ps1
+        echo "version=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+        echo "display_version=$(git describe --tags --abbrev=0 2>$null | sed 's/^v//')" >> $env:GITHUB_OUTPUT
+        echo "build_number=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
+      shell: pwsh
 
     - name: Download all artifacts
       uses: actions/download-artifact@v4
@@ -109,10 +110,10 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ steps.get_version.outputs.version }}
-        name: Release ${{ steps.get_version.outputs.version }}
+        tag_name: ${{ steps.version.outputs.version }}
+        name: Release ${{ steps.version.outputs.display_version }}
         body: |
-          ## Soldato ${{ steps.get_version.outputs.version }}
+          ## Soldato ${{ steps.version.outputs.display_version }}
 
           Multi-architecture release with optimized builds for:
           - **x86** (32-bit Windows)
@@ -129,10 +130,10 @@ jobs:
           - No additional dependencies required
 
           ### Changes
-          See the [changelog](https://github.com/${{ github.repository }}/compare/${{ steps.get_version.outputs.version }}^...${{ steps.get_version.outputs.version }}) for detailed changes.
+          See the [changelog](https://github.com/${{ github.repository }}/compare/${{ steps.version.outputs.display_version }}^...${{ steps.version.outputs.display_version }}) for detailed changes.
         files: |
-          artifacts/Soldato-x86/Soldato-${{ steps.get_version.outputs.version }}-x86.zip
-          artifacts/Soldato-x64/Soldato-${{ steps.get_version.outputs.version }}-x64.zip
-          artifacts/Soldato-arm64/Soldato-${{ steps.get_version.outputs.version }}-arm64.zip
+          artifacts/Soldato-x86/Soldato-${{ steps.version.outputs.display_version }}-x86.zip
+          artifacts/Soldato-x64/Soldato-${{ steps.version.outputs.display_version }}-x64.zip
+          artifacts/Soldato-arm64/Soldato-${{ steps.version.outputs.display_version }}-arm64.zip
         draft: false
         prerelease: false
