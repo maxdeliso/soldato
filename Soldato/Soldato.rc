@@ -32,10 +32,6 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                          IDM_EXIT
     END
-    POPUP "&View"
-    BEGIN
-        MENUITEM "&Refresh",                       IDM_REFRESH
-    END
     POPUP "&Help"
     BEGIN
         MENUITEM "&About Soldato...",              IDM_ABOUT

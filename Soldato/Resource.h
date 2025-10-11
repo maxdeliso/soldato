@@ -11,7 +11,6 @@
 #define IDM_ABOUT				105
 #define IDM_EXIT				106
 #define IDM_OPEN_CHAT			107
-#define IDM_REFRESH				113
 #define IDM_CONNECT				108
 #define IDM_DISCONNECT			109
 #define IDI_SOLDATO			110

@@ -2,19 +2,20 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <stdexcept>
+#include <string>
 
 #pragma comment(lib, "ws2_32.lib")
 
-// RAII wrapper for Winsock initialization
 class WinsockManager {
 public:
     WinsockManager() {
         WSADATA wsaData;
         int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
         if (result != 0) {
-            // In a real application, you might want to throw an exception here
-            // For now, we'll just mark it as failed
-            m_initialized = false;
+            // Throw an exception with detailed error information
+            std::string errorMsg = "WSAStartup failed with error code: " + std::to_string(result);
+            throw std::runtime_error(errorMsg);
         } else {
             m_initialized = true;
         }

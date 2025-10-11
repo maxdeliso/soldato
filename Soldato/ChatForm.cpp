@@ -491,10 +491,6 @@ LRESULT ChatForm::OnCommand(WPARAM wParam, LPARAM /*lParam*/)
         DEBUG_LOG("ChatForm: Disconnect menu clicked");
         OnDisconnect();
         break;
-    case IDM_REFRESH:
-        DEBUG_LOG("ChatForm: Refresh menu clicked");
-        UpdateConnectionUI();
-        break;
     case IDM_EXIT:
         DEBUG_LOG("ChatForm: Exit menu clicked");
         PostQuitMessage(0);
