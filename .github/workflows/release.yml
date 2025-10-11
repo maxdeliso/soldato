@@ -94,7 +94,6 @@ jobs:
           exit 1
         }
 
-        try { copy "Soldato\app.ico" "release-${{ matrix.platform }}\app.ico" } catch { Write-Host "app.ico not found, skipping" }
       shell: pwsh
 
     - name: Create ZIP archive

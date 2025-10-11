@@ -119,10 +119,6 @@ private:
     LRESULT OnMeasureItem(LPARAM lParam);
     LRESULT OnDrawItem(LPARAM lParam);
 
-    // Refactored socket event handlers for better code organization
-    void ProcessRawJsonEvent(const std::string& data);
-    void ProcessChatMessage(const Message& message);
-    void ProcessAckMessage(const Message& message);
 
     // Helper function to resolve proper module handle
     static HINSTANCE ResolveModuleHandle(HINSTANCE hInstance);
@@ -137,7 +133,6 @@ private:
     void OnConnect();
     void OnDisconnect();
     void OnNetworkMessage(const std::string& sender, const std::string& message);
-    void OnSocketEvent(SocketEventType eventType, const std::string& data);
 
     // GDI object management
     void CreateGDIObjects();

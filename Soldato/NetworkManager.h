@@ -26,7 +26,6 @@ enum class SocketEventType {
     SocketClosed = 3,           // Socket closed by remote
     MessageReceived = 4,        // Message received (legacy or Teflon)
     ReadEvent = 5,              // FD_READ event received
-    RawJsonReceived = 6,        // Raw JSON data received
     JsonParseError = 7,         // JSON parsing failed
     AckSent = 8,                // Acknowledgment sent
     SendBlocked = 9,            // SendMessageAsync blocked
@@ -71,12 +70,7 @@ private:
     std::atomic<bool> m_sendWorkerRunning;
 
     // Thread-safe message queue for UI notifications (notify-and-pull pattern)
-    struct QueuedMessage {
-        std::string sender;
-        std::string message;
-        QueuedMessage(const std::string& s, const std::string& m) : sender(s), message(m) {}
-    };
-    std::queue<QueuedMessage> m_messageQueue;
+    std::queue<Message> m_messageQueue;
     std::mutex m_messageQueueMutex;
 
     NetworkManager();
@@ -136,7 +130,7 @@ public:
     void SetNotificationWindow(HWND hWnd);
 
     // Thread-safe message queue access (notify-and-pull pattern)
-    std::vector<QueuedMessage> PopAllMessages();
+    std::vector<Message> PopAllMessages();
 
 private:
     MessageCallback m_messageCallback;

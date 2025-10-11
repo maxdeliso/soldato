@@ -197,12 +197,6 @@ m_hPendingIndicatorBorderPen(nullptr)
         m_networkManager = &NetworkManager::GetInstance();
         DEBUG_LOG("ChatForm: NetworkManager instance obtained");
         m_networkManager->SetNotificationWindow(m_hWnd);
-        m_networkManager->SetMessageCallback([this](const std::string& sender, const std::string& message) {
-            this->OnNetworkMessage(sender, message);
-        });
-        m_networkManager->SetSocketEventCallback([this](SocketEventType eventType, const std::string& data) {
-            this->OnSocketEvent(eventType, data);
-        });
 
         // Message tracking is now handled by NetworkManager
         DEBUG_LOG("ChatForm: Using NetworkManager's MessageTracker");
@@ -247,8 +241,7 @@ ChatForm::~ChatForm()
     // Clear network manager callbacks first to prevent race conditions
     if (m_networkManager)
     {
-        m_networkManager->ClearMessageCallback();
-        m_networkManager->ClearSocketEventCallback();
+        // Message callback is no longer used
     }
 
     // Kill the timer
@@ -512,18 +505,17 @@ LRESULT ChatForm::OnNewMessagesAvailable()
     // Safely pull all messages from the NetworkManager queue
     if (m_networkManager) {
         auto messages = m_networkManager->PopAllMessages();
-        for (const auto& queuedMsg : messages) {
-            // Filter out system messages that should be debug logs
-            std::wstring sender = StringUtils::to_wstring(queuedMsg.sender);
-            std::wstring message = StringUtils::to_wstring(queuedMsg.message);
+        for (const auto& msg : messages) { // msg is now a full Message object
+            std::wstring sender = StringUtils::to_wstring(msg.senderId); // Use senderId
+            std::wstring message = StringUtils::to_wstring(msg.body);   // Use body
 
             if (sender == L"System") {
-                // Convert system messages to debug logs
-                std::string debugMsg = "NetworkManager: " + queuedMsg.message;
+                // System messages are handled as before
+                std::string debugMsg = "NetworkManager: " + msg.body;
                 DEBUG_LOG(debugMsg);
             } else {
-                // Only show actual user messages in chat
-                AddChatMessage(sender, message);
+                // Pass the original messageId to AddChatMessage
+                AddChatMessage(sender, message, msg.messageId);
             }
         }
         UpdatePeerDisplay();
@@ -1254,13 +1246,6 @@ void ChatForm::UpdateConnectionUI()
         bool connected = m_networkManager->IsConnected();
         DEBUG_LOG("ChatForm: UpdateConnectionUI called - connected: " + std::string(connected ? "true" : "false"));
 
-        // Restore socket callback after reconnecting
-        if (connected) {
-            m_networkManager->SetSocketEventCallback([this](SocketEventType eventType, const std::string& data) {
-                this->OnSocketEvent(eventType, data);
-            });
-            DEBUG_LOG("ChatForm: Socket callback restored after connection");
-        }
 
         EnableDisconnectControls(connected);
 
@@ -1292,163 +1277,10 @@ HWND ChatForm::GetConnectDialogHandle() const
     return nullptr;
 }
 
-void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& message)
-{
-    // This is EXECUTED on the Network Thread
-    UNREFERENCED_PARAMETER(sender);
 
-    DEBUG_LOG("ChatForm: OnNetworkMessage received from: " + sender + ", message: " + message);
 
-    // Check if this is an acknowledgment message or regular JSON message
-    if (m_networkManager) {
-        // Try to parse as JSON
-        std::optional<Message> msgOpt = JsonUtils::DeserializeMessage(message);
-        if (msgOpt) {
-            Message msg = *msgOpt;
-            std::string msgType = Message::messageTypeToString(msg.type);
-            DEBUG_LOG("ChatForm: Parsed JSON message type: " + msgType);
 
-            if (msgType == "ACK" || msgType == "NACK") {
-                // This is an acknowledgment, process it
-                DEBUG_LOG("ChatForm: Processing " + msgType + " for message: " + msg.originalMessageId.value_or("unknown"));
 
-                    // Use NetworkManager's MessageTracker
-                    if (m_networkManager) {
-                        auto networkTracker = m_networkManager->GetMessageTracker();
-                        if (networkTracker) {
-                            networkTracker->processAcknowledgment(msg);
-                        }
-                    }
-
-                    // Update UI on main thread
-                    PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
-                    DEBUG_LOG("ChatForm: Posted WM_APP_UPDATE_ACK to UI thread");
-                    return; // Don't display ACK messages in chat and don't process further
-            } else if (msgType == "CHAT") {
-                // This is a regular chat message, extract the content
-                Message chatMsg = msg;
-
-                // Don't process our own messages here - they're already in the UI from SendChatMessage()
-                if (chatMsg.senderId == m_networkManager->GetSenderId()) {
-                    DEBUG_LOG("ChatForm: OnNetworkMessage ignoring own message to prevent duplication: " + chatMsg.messageId);
-                    return;
-                }
-
-                    // Queue the message for UI thread processing (notify-and-pull pattern)
-                    if (m_networkManager) {
-                        // Use the NetworkManager's queue instead of direct PostMessage
-                        // This will be handled by the new WM_APP_NEW_MESSAGES_AVAILABLE handler
-                        return;
-                    }
-                    return;
-                }
-            }
-        } else {
-            // IF PARSING FAILS, it's a plain string message (e.g., "Network connection established").
-            // Handle it gracefully instead of just logging an error.
-            DEBUG_LOG("ChatForm: JSON parsing failed. Treating as plain text.");
-    }
-
-    // Fallback for non-JSON messages - queue for UI thread processing
-    if (m_networkManager) {
-        // Use the NetworkManager's queue instead of direct PostMessage
-        // This will be handled by the new WM_APP_NEW_MESSAGES_AVAILABLE handler
-        return;
-    }
-}
-
-void ChatForm::OnSocketEvent(SocketEventType eventType, const std::string& data)
-{
-    // This is EXECUTED on the Network Thread
-
-    DEBUG_LOG("ChatForm: OnSocketEvent received - eventType: " + std::to_string(static_cast<int>(eventType)) + ", data: " + data);
-
-    // Handle "Raw JSON" event to capture message ID
-    if (eventType == SocketEventType::RawJsonReceived && m_networkManager) {
-        ProcessRawJsonEvent(data);
-    }
-
-    // Only send UI events for important system messages (Connection established and Socket closed)
-    if (eventType == SocketEventType::Connected || eventType == SocketEventType::SocketClosed) {
-        // 1. Allocate event data on the heap
-        SystemEventData* eventData = new SystemEventData();
-        eventData->eventType = static_cast<int>(eventType);
-        eventData->data = StringUtils::to_wstring(data);
-
-        // 2. Post the POINTER to the UI thread
-        PostMessage(m_hWnd, WM_APP_SYSTEM_EVENT, 0, (LPARAM)eventData);
-    } else {
-        // All other system events are debug information only
-        std::string debugMsg = "NetworkManager: Event " + std::to_string(static_cast<int>(eventType)) + " - " + data;
-        DEBUG_LOG(debugMsg);
-    }
-}
-
-void ChatForm::ProcessRawJsonEvent(const std::string& data)
-{
-    DEBUG_LOG("ChatForm: Processing RawJsonReceived event");
-    // Parse the JSON message directly - no prefix extraction needed
-    DEBUG_LOG("ChatForm: Received JSON data: " + data);
-
-    std::optional<Message> msgOpt = JsonUtils::DeserializeMessage(data);
-    if (msgOpt) {
-        Message message = *msgOpt;
-        DEBUG_LOG("ChatForm: Successfully parsed message JSON");
-
-        // Handle different message types
-        std::string messageType = Message::messageTypeToString(message.type);
-        if (messageType == "CHAT") {
-            ProcessChatMessage(message);
-        } else if (messageType == "ACK") {
-            ProcessAckMessage(message);
-        } else {
-            DEBUG_LOG("ChatForm: Unknown message type: " + messageType);
-        }
-    } else {
-        DEBUG_LOG("ChatForm: Failed to parse message or message doesn't contain required fields");
-    }
-}
-
-void ChatForm::ProcessChatMessage(const Message& message)
-{
-    // Use direct Message object fields
-    std::string messageId = message.messageId;
-    std::string body = message.body;
-    std::string senderId = message.senderId;
-
-    DEBUG_LOG("ChatForm: CHAT message - ID: " + messageId + ", senderId: " + senderId);
-
-    // Don't process our own messages here - they're already in the UI from SendChatMessage()
-    if (senderId == m_networkManager->GetSenderId()) {
-        DEBUG_LOG("ChatForm: Ignoring own message to prevent duplication: " + messageId);
-        return; // Exit early to prevent duplicate processing
-    }
-
-    DEBUG_LOG("ChatForm: Processing message from other user: " + senderId);
-}
-
-void ChatForm::ProcessAckMessage(const Message& message)
-{
-    // This is an ACK message - process it directly using Message object fields
-    std::string ackMessageId = message.messageId;
-    std::string originalMessageId = message.originalMessageId.value_or("");
-    std::string ackSenderId = message.senderId;
-
-    DEBUG_LOG("ChatForm: Processing ACK - Message ID: " + ackMessageId + ", Original ID: " + originalMessageId + ", From: " + ackSenderId);
-
-    // Use NetworkManager's MessageTracker
-    if (m_networkManager) {
-        auto networkTracker = m_networkManager->GetMessageTracker();
-        if (networkTracker) {
-            networkTracker->processAcknowledgment(message);
-        }
-    }
-    DEBUG_LOG("ChatForm: Processed ACK for message: " + originalMessageId);
-
-    // Update UI on main thread
-    PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
-    DEBUG_LOG("ChatForm: Posted WM_APP_UPDATE_ACK to UI thread");
-}
 
 // About dialog procedure
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
