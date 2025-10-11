@@ -42,13 +42,7 @@ jobs:
       shell: pwsh
 
     - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v1.3
-
-    - name: Setup Visual Studio
-      uses: microsoft/setup-vs@v1
-      with:
-        vs-version: '17.0'
-        components: 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64 Microsoft.VisualStudio.Component.VC.Tools.ARM64 Microsoft.VisualStudio.Component.Windows10SDK.19041'
+      uses: microsoft/setup-msbuild@v2
 
 
     - name: Build ${{ matrix.platform }}
