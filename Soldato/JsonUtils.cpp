@@ -1,6 +1,7 @@
 #include "JsonUtils.h"
 #include "Message.h"
 #include <cstdlib>
+#include <windows.h>
 
 // yyjson-based serialization function
 std::string JsonUtils::SerializeMessage(const Message& msg) {
@@ -9,16 +10,17 @@ std::string JsonUtils::SerializeMessage(const Message& msg) {
     yyjson_mut_val *root = yyjson_mut_obj(doc);
     yyjson_mut_doc_set_root(doc, root);
 
-    // 2. Add key-value pairs for each member
-    yyjson_mut_obj_add_str(doc, root, "senderId", msg.senderId.c_str());
-    yyjson_mut_obj_add_str(doc, root, "body", msg.body.c_str());
-    yyjson_mut_obj_add_str(doc, root, "messageId", msg.messageId.c_str());
-    yyjson_mut_obj_add_str(doc, root, "type", Message::messageTypeToString(msg.type).c_str());
+    // 2. Add key-value pairs for each member (using strcpy to avoid lifetime issues)
+    yyjson_mut_obj_add_strcpy(doc, root, "senderId", msg.senderId.c_str());
+    yyjson_mut_obj_add_strcpy(doc, root, "body", msg.body.c_str());
+    yyjson_mut_obj_add_strcpy(doc, root, "messageId", msg.messageId.c_str());
+
+    yyjson_mut_obj_add_strcpy(doc, root, "type", Message::messageTypeToString(msg.type).c_str());
     yyjson_mut_obj_add_uint(doc, root, "checksum", msg.checksum);
 
     // Handle optional fields
     if (msg.originalMessageId.has_value()) {
-        yyjson_mut_obj_add_str(doc, root, "originalMessageId", msg.originalMessageId->c_str());
+        yyjson_mut_obj_add_strcpy(doc, root, "originalMessageId", msg.originalMessageId->c_str());
     }
 
     // 3. Write to a string (yyjson manages memory for the write)

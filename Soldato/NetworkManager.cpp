@@ -581,16 +581,6 @@ void NetworkManager::ProcessSocketData()
         // Construct string using the exact number of bytes received
         std::string jsonData(buffer, bytesReceived);
 
-        // Debug: Notify raw message received
-        SocketEventCallback socketCallback;
-        {
-            std::lock_guard<std::mutex> lock(m_callbackMutex);
-            socketCallback = m_socketEventCallback;
-        }
-        if (socketCallback)
-        {
-            socketCallback(SocketEventType::RawJsonReceived, jsonData);
-        }
 
         // Try to deserialize Teflon-compatible JSON message
         std::optional<Message> teflonMessageOpt = JsonUtils::DeserializeMessage(jsonData);
@@ -668,6 +658,9 @@ void NetworkManager::SendAcknowledgment(const std::string& originalMessageId, bo
     // Create acknowledgment message
     Message ackMessage = CreateAcknowledgment(m_senderId, originalMessageId, isPositive);
 
+    // DO NOT track ACK messages - they are responses to other messages and should not be tracked
+    // This prevents ACK feedback loops where ACKs get ACKed
+
     // Serialize and send
     std::string jsonMessage = JsonUtils::SerializeMessage(ackMessage);
 
@@ -697,17 +690,17 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
         return;
     }
 
+
     // Validate checksum
     uint32_t calculatedChecksum = Message::calculateChecksum(message.body);
     bool checksumValid = (calculatedChecksum == message.checksum);
 
     // Handle different message types
     if (message.isAcknowledgment()) {
-        // Process ACK/NACK
+        // Process ACK/NACK - but don't send ACKs for ACKs to prevent feedback loops
         if (m_messageTracker) {
             m_messageTracker->processAcknowledgment(message);
         }
-
 
         SocketEventCallback socketCallback;
         {
@@ -718,6 +711,7 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
             std::string ackType = (message.type == MessageType::ACK) ? "ACK" : "NACK";
             socketCallback(SocketEventType::MessageReceived, "Teflon " + ackType + " received from " + message.senderId);
         }
+        return; // Explicit return to prevent any further processing and ACK feedback loops
     } else if (message.type == MessageType::CHAT) {
         // Handle chat message
         if (checksumValid) {
@@ -734,7 +728,7 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
             // Queue the message for UI thread processing (notify-and-pull pattern)
             {
                 std::lock_guard<std::mutex> lock(m_messageQueueMutex);
-                m_messageQueue.emplace(username_copy, message.body);
+                m_messageQueue.push(message);
             }
 
             // Notify UI thread that new messages are available
@@ -790,10 +784,10 @@ int NetworkManager::GetPeerCount() const
     return 0;
 }
 
-std::vector<NetworkManager::QueuedMessage> NetworkManager::PopAllMessages()
+std::vector<Message> NetworkManager::PopAllMessages()
 {
     std::lock_guard<std::mutex> lock(m_messageQueueMutex);
-    std::vector<QueuedMessage> messages;
+    std::vector<Message> messages;
 
     while (!m_messageQueue.empty()) {
         messages.push_back(m_messageQueue.front());

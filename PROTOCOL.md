@@ -34,7 +34,7 @@ All data transmitted over the network is a UTF-8 encoded string representing a s
 | `senderId`          | String | The unique UUID of the client sending the message                                                      |
 | `body`              | String | The payload of the message. For a `CHAT` message, this is the user's text. For an `ACK`, it's a confirmation string |
 | `checksum`          | Number | A 32-bit CRC32 checksum calculated on the `body` field to ensure integrity                             |
-| `originalMessageId` | String | **(Optional)** Only present in `ACK` and `NACK` messages. Contains the `messageId` of the message being acknowledged |
+| `originalMessageId` | String | **(Required for ACK/NACK)** Must be present in `ACK` and `NACK` messages. Contains the `messageId` of the message being acknowledged |
 
 ### Message Examples
 
