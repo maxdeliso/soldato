@@ -47,9 +47,10 @@ public:
     /**
      * Tracks a new outgoing message.
      *
-     * @param message The message to track
+     * @param messageId The UUID of the message to track
+     * @param senderId The sender ID of the message
      */
-    void trackMessage(const Message& message);
+    void trackMessage(const std::string& messageId, const std::string& senderId);
 
     /**
      * Processes an acknowledgment message.
@@ -65,6 +66,22 @@ public:
      * @return The set of sender IDs that have acknowledged the message
      */
     std::unordered_set<std::string> getAcknowledgingParties(const std::string& messageId) const;
+
+    /**
+     * Gets the number of acknowledgments for a message.
+     *
+     * @param messageId The ID of the message to check
+     * @return The number of acknowledgments received for the message
+     */
+    size_t getAcknowledgmentCount(const std::string& messageId) const;
+
+    /**
+     * Checks if a message has been acknowledged by any peer.
+     *
+     * @param messageId The ID of the message to check
+     * @return True if the message has been acknowledged by at least one peer
+     */
+    bool hasAcknowledgment(const std::string& messageId) const;
 
     /**
      * Gets delivery statistics.
@@ -90,15 +107,17 @@ public:
 
 private:
     /**
-     * Record class to hold message tracking information.
+     * Lightweight record class to hold message tracking information.
+     * Only stores essential data for tracking, not full message content.
      */
     struct MessageInfo {
-        Message message;
+        std::string messageId;
+        std::string senderId;
         std::chrono::steady_clock::time_point timestamp;
         std::unordered_map<std::string, Message> acknowledgments;
 
-        MessageInfo(const Message& msg, std::chrono::steady_clock::time_point ts)
-            : message(msg), timestamp(ts) {}
+        MessageInfo(const std::string& msgId, const std::string& sender, std::chrono::steady_clock::time_point ts)
+            : messageId(msgId), senderId(sender), timestamp(ts) {}
     };
 
     /**

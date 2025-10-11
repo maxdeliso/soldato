@@ -19,6 +19,20 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
+// Socket event types for callback notifications
+enum class SocketEventType {
+    Connected = 1,              // Connection established
+    MessageSent = 2,            // Message successfully sent
+    SocketClosed = 3,           // Socket closed by remote
+    MessageReceived = 4,        // Message received (legacy or Teflon)
+    ReadEvent = 5,              // FD_READ event received
+    RawJsonReceived = 6,        // Raw JSON data received
+    JsonParseError = 7,         // JSON parsing failed
+    AckSent = 8,                // Acknowledgment sent
+    SendBlocked = 9,            // SendMessageAsync blocked
+    Error = -1                  // General error condition
+};
+
 class NetworkManager
 {
 private:
@@ -56,6 +70,15 @@ private:
     std::thread m_sendWorkerThread;
     std::atomic<bool> m_sendWorkerRunning;
 
+    // Thread-safe message queue for UI notifications (notify-and-pull pattern)
+    struct QueuedMessage {
+        std::string sender;
+        std::string message;
+        QueuedMessage(const std::string& s, const std::string& m) : sender(s), message(m) {}
+    };
+    std::queue<QueuedMessage> m_messageQueue;
+    std::mutex m_messageQueueMutex;
+
     NetworkManager();
     ~NetworkManager();
 
@@ -72,14 +95,14 @@ public:
     bool IsConnected() const { return m_connected.load(); }
 
     // Teflon-compatible message helpers
-    std::string SerializeMessage(const Message& message);
-    bool DeserializeMessage(const std::string& jsonData, Message& message);
     Message CreateChatMessage(const std::string& sender, const std::string& content);
     Message CreateAcknowledgment(const std::string& sender, const std::string& originalMessageId, bool isPositive);
 
     // Message tracking and ACK/NACK functionality
     void SendAcknowledgment(const std::string& originalMessageId, bool isPositive);
     void ProcessIncomingMessage(const Message& message);
+    MessageTracker* GetMessageTracker() const { return m_messageTracker.get(); }
+    const std::string& GetSenderId() const { return m_senderId; }
     std::unordered_map<std::string, long long> GetDeliveryStats() const;
 
     // Peer tracking functionality
@@ -89,10 +112,6 @@ public:
     std::string GetUsername() const {
         std::lock_guard<std::mutex> lock(m_memberMutex);
         return m_username;
-    }
-    std::string GetSenderId() const {
-        std::lock_guard<std::mutex> lock(m_memberMutex);
-        return m_senderId;
     }
     std::string GetMulticastIP() const {
         std::lock_guard<std::mutex> lock(m_memberMutex);
@@ -109,12 +128,15 @@ public:
     void ClearMessageCallback();
 
     // Windows event callbacks - using std::function for safer callback management
-    typedef std::function<void(int eventType, const std::string& data)> SocketEventCallback;
+    typedef std::function<void(SocketEventType eventType, const std::string& data)> SocketEventCallback;
     void SetSocketEventCallback(SocketEventCallback callback);
     void ClearSocketEventCallback();
 
     // UI notification methods
     void SetNotificationWindow(HWND hWnd);
+
+    // Thread-safe message queue access (notify-and-pull pattern)
+    std::vector<QueuedMessage> PopAllMessages();
 
 private:
     MessageCallback m_messageCallback;

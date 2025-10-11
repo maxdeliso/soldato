@@ -179,7 +179,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
     sockaddr_in localAddr = {};
     localAddr.sin_family = AF_INET;
     localAddr.sin_addr.s_addr = INADDR_ANY;
-    localAddr.sin_port = htons(port);
+    localAddr.sin_port = htons(static_cast<u_short>(port));
 
     if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
     {
@@ -192,7 +192,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
 
     // Set up multicast address
     m_multicastAddr.sin_family = AF_INET;
-    m_multicastAddr.sin_port = htons(port);
+    m_multicastAddr.sin_port = htons(static_cast<u_short>(port));
     inet_pton(AF_INET, multicastIP.c_str(), &m_multicastAddr.sin_addr);
 
     // Join multicast group
@@ -245,7 +245,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
 
     // Clear any old messages in the send queue
     {
-        std::lock_guard<std::mutex> lock(m_sendQueueMutex);
+        std::lock_guard<std::mutex> sendQueueLock(m_sendQueueMutex);
         while (!m_sendQueue.empty()) {
             m_sendQueue.pop();
         }
@@ -261,18 +261,18 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
     // Notify connection established
     SocketEventCallback socketCallback;
     {
-        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
         socketCallback = m_socketEventCallback;
     }
     if (socketCallback)
     {
-        socketCallback(1, "Connected to " + multicastIP + ":" + std::to_string(port));
+        socketCallback(SocketEventType::Connected, "Connected to " + multicastIP + ":" + std::to_string(port));
     }
 
     // Debug: Add a test message to verify the callback system
     MessageCallback messageCallback;
     {
-        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        std::lock_guard<std::mutex> messageCallbackLock(m_callbackMutex);
         messageCallback = m_messageCallback;
     }
     if (messageCallback)
@@ -351,19 +351,36 @@ bool NetworkManager::SendMessage(const std::string& message)
         return false;
     }
 
-    OutputDebugStringA("SendMessage: Creating Teflon message\n");
-    // Create Teflon-compatible message
-    Message teflonMessage = CreateChatMessage(m_senderId, message);
+    // Try to parse the message as JSON first (from ChatForm)
+    Message teflonMessage;
+    try {
+        nlohmann::json jsonMsg = nlohmann::json::parse(message);
+        if (jsonMsg.contains("type") && jsonMsg.contains("messageId")) {
+            // This is a pre-formatted message from ChatForm, use it directly but fix the senderId
+            teflonMessage = jsonMsg.get<Message>();
+            teflonMessage.senderId = m_senderId; // Replace "You" with actual UUID
+            OutputDebugStringA("SendMessage: Using pre-formatted message from ChatForm, fixed senderId\n");
+        } else {
+            // This is a plain string, create a new message
+            teflonMessage = CreateChatMessage(m_senderId, message);
+            OutputDebugStringA("SendMessage: Creating new Teflon message for plain string\n");
+        }
+    } catch (const std::exception&) {
+        // If parsing fails, treat as plain string
+        teflonMessage = CreateChatMessage(m_senderId, message);
+        OutputDebugStringA("SendMessage: JSON parse failed, creating new Teflon message\n");
+    }
 
-    // Track the message for ACK/NACK
+    // Track the message for ACK/NACK (lightweight - only UUID and sender)
     if (m_messageTracker) {
         OutputDebugStringA("SendMessage: Tracking message\n");
-        m_messageTracker->trackMessage(teflonMessage);
+        m_messageTracker->trackMessage(teflonMessage.messageId, teflonMessage.senderId);
     }
 
     // Serialize message as JSON
     OutputDebugStringA("SendMessage: Serializing message\n");
-    std::string jsonMessage = SerializeMessage(teflonMessage);
+    nlohmann::json j = teflonMessage;
+    std::string jsonMessage = j.dump();
 
     OutputDebugStringA(("SendMessage: Calling sendto with " + std::to_string(jsonMessage.length()) + " bytes\n").c_str());
     int result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
@@ -381,7 +398,7 @@ bool NetworkManager::SendMessage(const std::string& message)
         if (socketCallback)
         {
             OutputDebugStringA("SendMessage: Calling socket callback\n");
-            socketCallback(2, "Message sent: " + message);
+            socketCallback(SocketEventType::MessageSent, "Message sent: " + message);
         }
         else
         {
@@ -411,7 +428,7 @@ void NetworkManager::SendMessageAsync(const std::string& message)
         }
         if (socketCallback) {
             std::string reason = !m_connected.load() ? "not connected" : "invalid socket";
-            socketCallback(9, "SendMessageAsync blocked: " + reason);
+            socketCallback(SocketEventType::SendBlocked, "SendMessageAsync blocked: " + reason);
         }
         OutputDebugStringA("SendMessageAsync: Blocked - not connected\n");
         return;
@@ -499,7 +516,7 @@ void NetworkManager::EventThreadFunction()
             }
             if (socketCallback)
             {
-                socketCallback(-1, "Socket event wait failed");
+                socketCallback(SocketEventType::Error, "Socket event wait failed");
             }
             break;
         }
@@ -520,7 +537,7 @@ void NetworkManager::HandleSocketEvent(WSAEVENT event)
         }
         if (socketCallback)
         {
-            socketCallback(-1, "Failed to enumerate network events");
+            socketCallback(SocketEventType::Error, "Failed to enumerate network events");
         }
         return;
     }
@@ -535,7 +552,7 @@ void NetworkManager::HandleSocketEvent(WSAEVENT event)
         }
         if (socketCallback)
         {
-            socketCallback(5, "FD_READ event received");
+            socketCallback(SocketEventType::ReadEvent, "FD_READ event received");
         }
         ProcessSocketData();
     }
@@ -549,7 +566,7 @@ void NetworkManager::HandleSocketEvent(WSAEVENT event)
         }
         if (socketCallback)
         {
-            socketCallback(3, "Socket closed by remote");
+            socketCallback(SocketEventType::SocketClosed, "Socket closed by remote");
         }
     }
 }
@@ -578,13 +595,15 @@ void NetworkManager::ProcessSocketData()
         }
         if (socketCallback)
         {
-            socketCallback(6, "Raw JSON: " + jsonData);
+            socketCallback(SocketEventType::RawJsonReceived, jsonData);
         }
 
         // Try to deserialize Teflon-compatible JSON message
         Message teflonMessage;
-        if (DeserializeMessage(jsonData, teflonMessage))
-        {
+        try {
+            nlohmann::json j = nlohmann::json::parse(jsonData);
+            teflonMessage = j.get<Message>();
+
             // Extract sender IP address for peer tracking
             char senderIP[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &fromAddr.sin_addr, senderIP, INET_ADDRSTRLEN);
@@ -602,47 +621,36 @@ void NetworkManager::ProcessSocketData()
             // Process the incoming message (handles ACK/NACK and validation)
             ProcessIncomingMessage(teflonMessage);
         }
-        else
+        catch (const nlohmann::json::parse_error& e)
         {
-            // Fallback: try to parse as old format for backward compatibility
-            size_t colonPos = jsonData.find(": ");
-            if (colonPos != std::string::npos && jsonData[0] == '[')
+            // Log JSON parse error with more details
+            OutputDebugStringA(("JSON parse error: " + std::string(e.what()) + "\n").c_str());
+            OutputDebugStringA(("Failed JSON data: " + jsonData + "\n").c_str());
+
+            SocketEventCallback parseErrorCallback;
             {
-                std::string oldSender = jsonData.substr(1, colonPos - 1); // Remove [ and ]
-                std::string oldMsg = jsonData.substr(colonPos + 2);
-
-                MessageCallback messageCallback;
-                {
-                    std::lock_guard<std::mutex> lock(m_callbackMutex);
-                    messageCallback = m_messageCallback;
-                }
-                if (messageCallback)
-                {
-                    messageCallback(oldSender, oldMsg);
-                }
-
-                SocketEventCallback socketCallback;
-                {
-                    std::lock_guard<std::mutex> lock(m_callbackMutex);
-                    socketCallback = m_socketEventCallback;
-                }
-                if (socketCallback)
-                {
-                    socketCallback(4, "Legacy message received from " + oldSender);
-                }
+                std::lock_guard<std::mutex> parseErrorLock(m_callbackMutex);
+                parseErrorCallback = m_socketEventCallback;
             }
-            else
+            if (parseErrorCallback)
             {
-                // Debug: Message format issue
-                SocketEventCallback socketCallback;
-                {
-                    std::lock_guard<std::mutex> lock(m_callbackMutex);
-                    socketCallback = m_socketEventCallback;
-                }
-                if (socketCallback)
-                {
-                    socketCallback(7, "JSON parse error: " + jsonData);
-                }
+                parseErrorCallback(SocketEventType::JsonParseError, "JSON parse error: " + jsonData);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            // Log other exceptions
+            OutputDebugStringA(("General exception: " + std::string(e.what()) + "\n").c_str());
+            OutputDebugStringA(("Failed JSON data: " + jsonData + "\n").c_str());
+
+            SocketEventCallback generalErrorCallback;
+            {
+                std::lock_guard<std::mutex> generalErrorLock(m_callbackMutex);
+                generalErrorCallback = m_socketEventCallback;
+            }
+            if (generalErrorCallback)
+            {
+                generalErrorCallback(SocketEventType::JsonParseError, "JSON parse error: " + jsonData);
             }
         }
     }
@@ -658,40 +666,13 @@ void NetworkManager::ProcessSocketData()
             }
             if (socketCallback)
             {
-                socketCallback(-1, "Socket receive error: " + std::to_string(error));
+                socketCallback(SocketEventType::Error, "Socket receive error: " + std::to_string(error));
             }
         }
     }
 }
 
-std::string NetworkManager::SerializeMessage(const Message& message)
-{
-    try
-    {
-        nlohmann::json j = message;
-        return j.dump();
-    }
-    catch (const std::exception&)
-    {
-        // Fallback to simple format if JSON serialization fails
-        return "[" + message.senderId + "]: " + message.body;
-    }
-}
 
-bool NetworkManager::DeserializeMessage(const std::string& jsonData, Message& message)
-{
-    try
-    {
-        nlohmann::json j = nlohmann::json::parse(jsonData);
-        message = j.get<Message>();
-        return true;
-    }
-    catch (const std::exception&)
-    {
-        // JSON parsing failed
-        return false;
-    }
-}
 
 Message NetworkManager::CreateChatMessage(const std::string& sender, const std::string& content)
 {
@@ -713,7 +694,11 @@ void NetworkManager::SendAcknowledgment(const std::string& originalMessageId, bo
     Message ackMessage = CreateAcknowledgment(m_senderId, originalMessageId, isPositive);
 
     // Serialize and send
-    std::string jsonMessage = SerializeMessage(ackMessage);
+    nlohmann::json j = ackMessage;
+    std::string jsonMessage = j.dump();
+
+    // Debug: Log the acknowledgment JSON being sent
+    OutputDebugStringA(("SendAcknowledgment: Sending ACK JSON: " + jsonMessage + "\n").c_str());
 
     int result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
                        (sockaddr*)&m_multicastAddr, sizeof(m_multicastAddr));
@@ -726,7 +711,7 @@ void NetworkManager::SendAcknowledgment(const std::string& originalMessageId, bo
             socketCallback = m_socketEventCallback;
         }
         if (socketCallback) {
-            socketCallback(8, "Sent " + ackType + " for message: " + originalMessageId);
+            socketCallback(SocketEventType::AckSent, "Sent " + ackType + " for message: " + originalMessageId);
         }
     }
 }
@@ -749,15 +734,6 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
             m_messageTracker->processAcknowledgment(message);
         }
 
-        // Display acknowledgment in chat
-        MessageCallback messageCallback;
-        {
-            std::lock_guard<std::mutex> lock(m_callbackMutex);
-            messageCallback = m_messageCallback;
-        }
-        if (messageCallback) {
-            messageCallback("System", message.body);
-        }
 
         SocketEventCallback socketCallback;
         {
@@ -766,7 +742,7 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
         }
         if (socketCallback) {
             std::string ackType = (message.type == MessageType::ACK) ? "ACK" : "NACK";
-            socketCallback(4, "Teflon " + ackType + " received from " + message.senderId);
+            socketCallback(SocketEventType::MessageReceived, "Teflon " + ackType + " received from " + message.senderId);
         }
     } else if (message.type == MessageType::CHAT) {
         // Handle chat message
@@ -781,14 +757,15 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
                 username_copy = m_username;
             }
 
-            // Display the message
-            MessageCallback messageCallback;
+            // Queue the message for UI thread processing (notify-and-pull pattern)
             {
-                std::lock_guard<std::mutex> lock(m_callbackMutex);
-                messageCallback = m_messageCallback;
+                std::lock_guard<std::mutex> lock(m_messageQueueMutex);
+                m_messageQueue.emplace(username_copy, message.body);
             }
-            if (messageCallback) {
-                messageCallback(username_copy, message.body);
+
+            // Notify UI thread that new messages are available
+            if (m_hNotifyWnd) {
+                PostMessage(m_hNotifyWnd, WM_APP_NEW_MESSAGES_AVAILABLE, 0, 0);
             }
 
             SocketEventCallback socketCallback;
@@ -797,7 +774,7 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
                 socketCallback = m_socketEventCallback;
             }
             if (socketCallback) {
-                socketCallback(4, "Teflon message received from " + message.senderId);
+                socketCallback(SocketEventType::MessageReceived, "Teflon message received from " + message.senderId);
             }
         } else {
             // Send NACK for invalid message
@@ -809,7 +786,7 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
                 socketCallback = m_socketEventCallback;
             }
             if (socketCallback) {
-                socketCallback(7, "Checksum validation failed for message from " + message.senderId);
+                socketCallback(SocketEventType::JsonParseError, "Checksum validation failed for message from " + message.senderId);
             }
         }
     }
@@ -837,4 +814,17 @@ int NetworkManager::GetPeerCount() const
         return m_peerTracker->getPeerCount();
     }
     return 0;
+}
+
+std::vector<NetworkManager::QueuedMessage> NetworkManager::PopAllMessages()
+{
+    std::lock_guard<std::mutex> lock(m_messageQueueMutex);
+    std::vector<QueuedMessage> messages;
+
+    while (!m_messageQueue.empty()) {
+        messages.push_back(m_messageQueue.front());
+        m_messageQueue.pop();
+    }
+
+    return messages;
 }

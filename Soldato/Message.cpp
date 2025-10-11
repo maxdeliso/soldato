@@ -1,4 +1,5 @@
 #include "Message.h"
+#include "JsonUtils.h"
 #include <random>
 #include <sstream>
 #include <iomanip>
@@ -73,24 +74,28 @@ void to_json(nlohmann::json& j, const Message& msg) {
     }
 }
 
-// JSON deserialization function
+// JSON deserialization function - optimized using JSON pointer literals
 void from_json(const nlohmann::json& j, Message& msg) {
-    j.at("senderId").get_to(msg.senderId);
-    j.at("body").get_to(msg.body);
-    j.at("messageId").get_to(msg.messageId);
+    using namespace nlohmann::literals;
 
-    std::string typeStr;
-    j.at("type").get_to(typeStr);
-    msg.type = Message::stringToMessageType(typeStr);
+    // Use JSON pointer literals for efficient property access
+    msg.senderId = j["/senderId"_json_pointer];
+    msg.body = j["/body"_json_pointer];
+    msg.messageId = j["/messageId"_json_pointer];
 
-    j.at("checksum").get_to(msg.checksum);
+    // Handle type conversion
+    std::string typeStr = j["/type"_json_pointer];
+    if (!typeStr.empty()) {
+        msg.type = Message::stringToMessageType(typeStr);
+    }
 
     // Handle optional originalMessageId
-    if (j.contains("originalMessageId") && !j["originalMessageId"].is_null()) {
-        std::string originalId;
-        j.at("originalMessageId").get_to(originalId);
-        msg.originalMessageId = originalId;
+    if (j.contains("originalMessageId")) {
+        msg.originalMessageId = j["/originalMessageId"_json_pointer];
     } else {
         msg.originalMessageId = std::nullopt;
     }
+
+    // Extract checksum (integer)
+    msg.checksum = j["/checksum"_json_pointer];
 }

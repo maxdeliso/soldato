@@ -1,6 +1,6 @@
 #include "framework.h"
 #include "MessageTracker.h"
-#include <iostream>
+#include "DebugUtils.h"
 #include <algorithm>
 
 MessageTracker::MessageTracker()
@@ -19,20 +19,27 @@ MessageTracker::~MessageTracker() {
     shutdown();
 }
 
-void MessageTracker::trackMessage(const Message& message) {
-    if (message.type != MessageType::CHAT) {
-        return; // Only track chat messages
-    }
-
+void MessageTracker::trackMessage(const std::string& messageId, const std::string& senderId) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    m_messageMap[message.messageId] = std::make_unique<MessageInfo>(
-        message,
+    // Check if message already exists (upsert behavior)
+    auto it = m_messageMap.find(messageId);
+    if (it != m_messageMap.end()) {
+        DEBUG_LOG("[MessageTracker] Message already tracked, updating: " + messageId + " (sender: " + senderId + ")");
+        // Update existing message info but preserve acknowledgments
+        it->second->senderId = senderId;
+        it->second->timestamp = std::chrono::steady_clock::now();
+        return;
+    }
+
+    m_messageMap[messageId] = std::make_unique<MessageInfo>(
+        messageId,
+        senderId,
         std::chrono::steady_clock::now()
     );
     m_totalMessagesSent++;
 
-    std::cout << "[MessageTracker] Tracking new message: " << message.messageId << std::endl;
+    DEBUG_LOG("[MessageTracker] Tracking new message: " + messageId + " (sender: " + senderId + ")");
 }
 
 void MessageTracker::processAcknowledgment(const Message& ack) {
@@ -44,28 +51,22 @@ void MessageTracker::processAcknowledgment(const Message& ack) {
 
     auto it = m_messageMap.find(ack.originalMessageId.value());
     if (it == m_messageMap.end()) {
-        std::cout << "[MessageTracker] Ignoring acknowledgment for unknown or timed out message: "
-                  << ack.originalMessageId.value() << std::endl;
+        DEBUG_LOG("[MessageTracker] Ignoring acknowledgment for unknown or timed out message: " + ack.originalMessageId.value());
         return; // Message not found or already timed out
     }
 
     MessageInfo* info = it->second.get();
 
-    // Don't process acknowledgments for messages we sent ourselves
-    if (info->message.senderId == m_instanceId) {
-        return;
-    }
-
+    // Store the acknowledgment regardless of who sent the original message
+    // This allows us to track ACKs for our own messages to show proper UI status
     info->acknowledgments[ack.senderId] = ack;
 
     if (ack.type == MessageType::ACK) {
         m_totalAcksReceived++;
-        std::cout << "[MessageTracker] Received ACK for message: " << ack.originalMessageId.value()
-                  << " from: " << ack.senderId << std::endl;
+        DEBUG_LOG("[MessageTracker] Received ACK for message: " + ack.originalMessageId.value() + " from: " + ack.senderId + " (original sender: " + info->senderId + ")");
     } else {
         m_totalNacksReceived++;
-        std::cout << "[MessageTracker] Received NACK for message: " << ack.originalMessageId.value()
-                  << " from: " << ack.senderId << std::endl;
+        DEBUG_LOG("[MessageTracker] Received NACK for message: " + ack.originalMessageId.value() + " from: " + ack.senderId + " (original sender: " + info->senderId + ")");
     }
 }
 
@@ -82,6 +83,28 @@ std::unordered_set<std::string> MessageTracker::getAcknowledgingParties(const st
         parties.insert(pair.first);
     }
     return parties;
+}
+
+size_t MessageTracker::getAcknowledgmentCount(const std::string& messageId) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto it = m_messageMap.find(messageId);
+    if (it == m_messageMap.end()) {
+        return 0;
+    }
+
+    return it->second->acknowledgments.size();
+}
+
+bool MessageTracker::hasAcknowledgment(const std::string& messageId) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto it = m_messageMap.find(messageId);
+    if (it == m_messageMap.end()) {
+        return false;
+    }
+
+    return !it->second->acknowledgments.empty();
 }
 
 std::unordered_map<std::string, long long> MessageTracker::getDeliveryStats() const {
@@ -104,7 +127,7 @@ void MessageTracker::cleanupTimedOutMessages() {
     auto it = m_messageMap.begin();
     while (it != m_messageMap.end()) {
         if (it->second->timestamp < cutoff) {
-            std::cout << "[MessageTracker] Message timed out: " << it->first << std::endl;
+            DEBUG_LOG("[MessageTracker] Message timed out: " + it->first);
             m_totalMessagesTimedOut++;
             it = m_messageMap.erase(it);
         } else {

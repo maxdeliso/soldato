@@ -3,6 +3,7 @@
 // Used by Soldato.rc
 
 #define IDS_APP_TITLE			103
+#define IDS_VERSION_STRING		104
 
 #define IDR_MAINFRAME			128
 #define IDD_SOLDATO_DIALOG	102
@@ -11,7 +12,6 @@
 #define IDM_ABOUT				105
 #define IDM_EXIT				106
 #define IDM_OPEN_CHAT			107
-#define IDM_REFRESH				113
 #define IDM_CONNECT				108
 #define IDM_DISCONNECT			109
 #define IDI_SOLDATO			110
@@ -28,6 +28,10 @@
 #define ID_USERNAME			2003
 #define ID_CONNECT_BTN			2004
 #define ID_CANCEL_BTN			2005
+
+// About Dialog Control IDs
+#define ID_GITHUB_LINK			2006
+#define IDC_VERSION_TEXT		2007
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
