@@ -172,8 +172,8 @@ jobs:
           /p:CodeAnalysisTreatWarningsAsErrors=false `
           /p:CodeAnalysisVerboseOutput=true `
           /p:CodeAnalysisLogFile=CodeAnalysisLog.xml `
-          /verbosity:detailed `
-          "/flp:logfile=static-analysis.log;verbosity=diagnostic"
+          /verbosity:minimal `
+          "/flp:logfile=static-analysis.log;verbosity=minimal"
       continue-on-error: true
 
     - name: Upload analysis results
@@ -182,6 +182,7 @@ jobs:
       with:
         name: static-analysis-results
         path: |
-          **/*.sarif
+          **/Soldato.exe.CodeAnalysisLog.xml
           **/CodeAnalysisLog.xml
+          **/static-analysis.log
         retention-days: 7
