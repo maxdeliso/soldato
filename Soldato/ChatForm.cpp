@@ -453,7 +453,7 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 // Refactored message handlers for better code organization
-LRESULT ChatForm::OnCommand(WPARAM wParam, LPARAM lParam)
+LRESULT ChatForm::OnCommand(WPARAM wParam, LPARAM /*lParam*/)
 {
     int wmId = LOWORD(wParam);
     int wmEvent = HIWORD(wParam);
@@ -630,7 +630,7 @@ LRESULT ChatForm::OnPeersUpdated()
     return 0;
 }
 
-LRESULT ChatForm::OnSize(WPARAM wParam, LPARAM lParam)
+LRESULT ChatForm::OnSize(WPARAM /*wParam*/, LPARAM lParam)
 {
     int width = LOWORD(lParam);
     int height = HIWORD(lParam);
@@ -1298,6 +1298,7 @@ HWND ChatForm::GetConnectDialogHandle() const
 void ChatForm::OnNetworkMessage(const std::string& sender, const std::string& message)
 {
     // This is EXECUTED on the Network Thread
+    UNREFERENCED_PARAMETER(sender);
 
     DEBUG_LOG("ChatForm: OnNetworkMessage received from: " + sender + ", message: " + message);
 

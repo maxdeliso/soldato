@@ -179,7 +179,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
     sockaddr_in localAddr = {};
     localAddr.sin_family = AF_INET;
     localAddr.sin_addr.s_addr = INADDR_ANY;
-    localAddr.sin_port = htons(port);
+    localAddr.sin_port = htons(static_cast<u_short>(port));
 
     if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
     {
@@ -192,7 +192,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
 
     // Set up multicast address
     m_multicastAddr.sin_family = AF_INET;
-    m_multicastAddr.sin_port = htons(port);
+    m_multicastAddr.sin_port = htons(static_cast<u_short>(port));
     inet_pton(AF_INET, multicastIP.c_str(), &m_multicastAddr.sin_addr);
 
     // Join multicast group
@@ -245,7 +245,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
 
     // Clear any old messages in the send queue
     {
-        std::lock_guard<std::mutex> lock(m_sendQueueMutex);
+        std::lock_guard<std::mutex> sendQueueLock(m_sendQueueMutex);
         while (!m_sendQueue.empty()) {
             m_sendQueue.pop();
         }
@@ -261,7 +261,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
     // Notify connection established
     SocketEventCallback socketCallback;
     {
-        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
         socketCallback = m_socketEventCallback;
     }
     if (socketCallback)
@@ -272,7 +272,7 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
     // Debug: Add a test message to verify the callback system
     MessageCallback messageCallback;
     {
-        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        std::lock_guard<std::mutex> messageCallbackLock(m_callbackMutex);
         messageCallback = m_messageCallback;
     }
     if (messageCallback)
@@ -627,14 +627,14 @@ void NetworkManager::ProcessSocketData()
             OutputDebugStringA(("JSON parse error: " + std::string(e.what()) + "\n").c_str());
             OutputDebugStringA(("Failed JSON data: " + jsonData + "\n").c_str());
 
-            SocketEventCallback socketCallback;
+            SocketEventCallback parseErrorCallback;
             {
-                std::lock_guard<std::mutex> lock(m_callbackMutex);
-                socketCallback = m_socketEventCallback;
+                std::lock_guard<std::mutex> parseErrorLock(m_callbackMutex);
+                parseErrorCallback = m_socketEventCallback;
             }
-            if (socketCallback)
+            if (parseErrorCallback)
             {
-                socketCallback(SocketEventType::JsonParseError, "JSON parse error: " + jsonData);
+                parseErrorCallback(SocketEventType::JsonParseError, "JSON parse error: " + jsonData);
             }
         }
         catch (const std::exception& e)
@@ -643,14 +643,14 @@ void NetworkManager::ProcessSocketData()
             OutputDebugStringA(("General exception: " + std::string(e.what()) + "\n").c_str());
             OutputDebugStringA(("Failed JSON data: " + jsonData + "\n").c_str());
 
-            SocketEventCallback socketCallback;
+            SocketEventCallback generalErrorCallback;
             {
-                std::lock_guard<std::mutex> lock(m_callbackMutex);
-                socketCallback = m_socketEventCallback;
+                std::lock_guard<std::mutex> generalErrorLock(m_callbackMutex);
+                generalErrorCallback = m_socketEventCallback;
             }
-            if (socketCallback)
+            if (generalErrorCallback)
             {
-                socketCallback(SocketEventType::JsonParseError, "JSON parse error: " + jsonData);
+                generalErrorCallback(SocketEventType::JsonParseError, "JSON parse error: " + jsonData);
             }
         }
     }

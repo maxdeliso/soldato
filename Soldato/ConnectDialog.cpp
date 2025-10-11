@@ -60,7 +60,7 @@ INT_PTR CALLBACK ConnectDialog::DialogProc(HWND hWnd, UINT message, WPARAM wPara
     return FALSE;
 }
 
-LRESULT ConnectDialog::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT ConnectDialog::HandleMessage(UINT message, WPARAM wParam, LPARAM /*lParam*/)
 {
     switch (message)
     {
