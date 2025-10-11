@@ -33,7 +33,9 @@ if ($BuildNumber -eq "") {
 }
 
 # Parse version components
-$versionParts = $Version -split '\.'
+# Remove prerelease identifiers (e.g., -test, -alpha, -beta) from patch version
+$baseVersion = $Version -replace '-.*$', ''
+$versionParts = $baseVersion -split '\.'
 if ($versionParts.Length -lt 3) {
     Write-Host "Invalid version format. Expected format: major.minor.patch (e.g., 1.0.0)" -ForegroundColor Red
     exit 1
