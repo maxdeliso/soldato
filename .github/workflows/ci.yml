@@ -26,6 +26,10 @@ jobs:
             platform: x86
           - configuration: Release
             platform: x86
+          - configuration: Debug
+            platform: arm64
+          - configuration: Release
+            platform: arm64
 
     steps:
     - name: Checkout code
@@ -79,6 +83,8 @@ jobs:
           "Soldato/${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe",
           "x64/${{ matrix.configuration }}/Soldato.exe",
           "x86/${{ matrix.configuration }}/Soldato.exe",
+          "arm64/${{ matrix.configuration }}/Soldato.exe",
+          "ARM64/${{ matrix.configuration }}/Soldato.exe",
           "Win32/${{ matrix.configuration }}/Soldato.exe"
         )
 
@@ -132,6 +138,10 @@ jobs:
           Soldato/${{ matrix.configuration }}/Soldato.pdb
           ${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe
           ${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.pdb
+          arm64/${{ matrix.configuration }}/Soldato.exe
+          arm64/${{ matrix.configuration }}/Soldato.pdb
+          ARM64/${{ matrix.configuration }}/Soldato.exe
+          ARM64/${{ matrix.configuration }}/Soldato.pdb
         retention-days: 30
         if-no-files-found: warn
 
@@ -159,7 +169,11 @@ jobs:
           /p:RunCodeAnalysis=true `
           /p:CodeAnalysisRuleSet=MinimumRecommendedRules.ruleset `
           /p:EnablePREfast=true `
-          /verbosity:minimal
+          /p:CodeAnalysisTreatWarningsAsErrors=false `
+          /p:CodeAnalysisVerboseOutput=true `
+          /p:CodeAnalysisLogFile=CodeAnalysisLog.xml `
+          /verbosity:detailed `
+          "/flp:logfile=static-analysis.log;verbosity=diagnostic"
       continue-on-error: true
 
     - name: Upload analysis results
