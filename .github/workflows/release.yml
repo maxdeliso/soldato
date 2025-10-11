@@ -58,7 +58,7 @@ jobs:
     - name: Create release directory
       run: |
         mkdir release-${{ matrix.platform }}
-        
+
         # Find the executable in various possible locations
         $possiblePaths = @(
           "${{ matrix.configuration }}/Soldato.exe",
@@ -66,7 +66,7 @@ jobs:
           "${{ matrix.arch }}/${{ matrix.configuration }}/Soldato.exe",
           "Soldato/${{ matrix.arch }}/${{ matrix.configuration }}/Soldato.exe"
         )
-        
+
         # Add Win32 path for x86 builds (solution maps x86 to Win32)
         if ("${{ matrix.arch }}" -eq "x86") {
           $possiblePaths += @(
@@ -74,7 +74,7 @@ jobs:
             "Soldato/Win32/${{ matrix.configuration }}/Soldato.exe"
           )
         }
-        
+
         $exePath = $null
         foreach ($path in $possiblePaths) {
           Write-Host "Checking: $path"
@@ -84,7 +84,7 @@ jobs:
             break
           }
         }
-        
+
         if ($exePath) {
           copy $exePath "release-${{ matrix.platform }}\Soldato.exe"
         } else {
@@ -93,7 +93,7 @@ jobs:
           Get-ChildItem -Recurse -Name "*.exe" | ForEach-Object { Write-Host "  $_" }
           exit 1
         }
-        
+
         try { copy "Soldato\app.ico" "release-${{ matrix.platform }}\app.ico" } catch { Write-Host "app.ico not found, skipping" }
       shell: pwsh
 
@@ -112,19 +112,18 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Update version with GitHub Actions build number
-      id: version
+    - name: Get tag name
+      id: tag
       run: |
-        .\scripts\update-version-github.ps1
-        echo "version=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
-        echo "display_version=$(git describe --tags --abbrev=0 2>$null | sed 's/^v//')" >> $env:GITHUB_OUTPUT
-        echo "build_number=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
-      shell: pwsh
+        echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        echo "display_version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
     - name: Download all artifacts
       uses: actions/download-artifact@v4
@@ -134,10 +133,10 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ steps.version.outputs.version }}
-        name: Release ${{ steps.version.outputs.display_version }}
+        tag_name: ${{ steps.tag.outputs.tag_name }}
+        name: Release ${{ steps.tag.outputs.display_version }}
         body: |
-          ## Soldato ${{ steps.version.outputs.display_version }}
+          ## Soldato ${{ steps.tag.outputs.display_version }}
 
           Multi-architecture release with optimized builds for:
           - **x86** (32-bit Windows)
@@ -154,10 +153,10 @@ jobs:
           - No additional dependencies required
 
           ### Changes
-          See the [changelog](https://github.com/${{ github.repository }}/compare/${{ steps.version.outputs.display_version }}^...${{ steps.version.outputs.display_version }}) for detailed changes.
+          See the [changelog](https://github.com/${{ github.repository }}/compare/${{ steps.tag.outputs.display_version }}^...${{ steps.tag.outputs.display_version }}) for detailed changes.
         files: |
-          artifacts/Soldato-x86/Soldato-${{ steps.version.outputs.display_version }}-x86.zip
-          artifacts/Soldato-x64/Soldato-${{ steps.version.outputs.display_version }}-x64.zip
-          artifacts/Soldato-arm64/Soldato-${{ steps.version.outputs.display_version }}-arm64.zip
+          artifacts/Soldato-x86/Soldato-${{ steps.tag.outputs.display_version }}-x86.zip
+          artifacts/Soldato-x64/Soldato-${{ steps.tag.outputs.display_version }}-x64.zip
+          artifacts/Soldato-arm64/Soldato-${{ steps.tag.outputs.display_version }}-arm64.zip
         draft: false
         prerelease: false
