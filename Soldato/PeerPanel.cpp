@@ -115,6 +115,10 @@ LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         // WM_CREATE is fully handled, we can return 0
         return 0;
 
+    case WM_ERASEBKGND:
+        // Prevent background erasure to eliminate flicker during resize
+        return TRUE;
+
     case WM_SIZE:
         {
             int width = LOWORD(lParam);
@@ -133,29 +137,41 @@ LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(m_hWnd, &ps);
 
-            // Cyberpunk background
+            // Get client rect for double buffering
             RECT clientRect;
             GetClientRect(m_hWnd, &clientRect);
 
-            // Use pre-created background brush
-            FillRect(hdc, &clientRect, m_hBkgBrush);
+            // Create memory DC for double buffering to reduce flicker
+            HDC memDC = CreateCompatibleDC(hdc);
+            HBITMAP memBitmap = CreateCompatibleBitmap(hdc, clientRect.right, clientRect.bottom);
+            HBITMAP oldBitmap = (HBITMAP)SelectObject(memDC, memBitmap);
+
+            // Draw to memory DC
+            // Background is now transparent to show parent window's grid pattern
+            // FillRect(memDC, &clientRect, m_hBkgBrush);  // Commented out for transparency
 
             // Use pre-created neon pen for border
-            HPEN oldPen = (HPEN)SelectObject(hdc, m_hNeonPen);
+            HPEN oldPen = (HPEN)SelectObject(memDC, m_hNeonPen);
 
             // Draw border
-            MoveToEx(hdc, 0, 0, nullptr);
-            LineTo(hdc, clientRect.right - 1, 0);
-            LineTo(hdc, clientRect.right - 1, clientRect.bottom - 1);
-            LineTo(hdc, 0, clientRect.bottom - 1);
-            LineTo(hdc, 0, 0);
+            MoveToEx(memDC, 0, 0, nullptr);
+            LineTo(memDC, clientRect.right - 1, 0);
+            LineTo(memDC, clientRect.right - 1, clientRect.bottom - 1);
+            LineTo(memDC, 0, clientRect.bottom - 1);
+            LineTo(memDC, 0, 0);
 
-            SelectObject(hdc, oldPen);
+            SelectObject(memDC, oldPen);
+
+            // Copy from memory DC to screen
+            BitBlt(hdc, 0, 0, clientRect.right, clientRect.bottom, memDC, 0, 0, SRCCOPY);
+
+            // Clean up
+            SelectObject(memDC, oldBitmap);
+            DeleteObject(memBitmap);
+            DeleteDC(memDC);
 
             EndPaint(m_hWnd, &ps);
         }
-        // For WM_PAINT, returning 0 is acceptable after BeginPaint/EndPaint,
-        // but allowing it to fall through is also safe and simpler
         return 0;
     }
 
@@ -188,13 +204,17 @@ void PeerPanel::InitializeControls() {
     );
     SendMessage(m_hPeerCountLabel, WM_SETFONT, (WPARAM)m_hFont, TRUE);
 
-    // Create peer list (ListBox)
+    // Create peer list (ListBox) - use dynamic height calculation to match reduced panel height
+    RECT clientRect;
+    GetClientRect(m_hWnd, &clientRect);
+    int height = clientRect.bottom - clientRect.top;
+
     m_hPeerList = CreateWindowExW(
         WS_EX_CLIENTEDGE,
         L"LISTBOX",
         L"",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER | LBS_NOTIFY,
-        10, 40, 280, 350,
+        10, 40, 280, height - 50,
         m_hWnd,
         (HMENU)static_cast<int>(PeerControlId::PeerList),
         m_hInstance,

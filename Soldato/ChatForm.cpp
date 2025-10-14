@@ -161,11 +161,11 @@ m_hPendingIndicatorBorderPen(nullptr)
         classRegistered = true;
     }
 
-    // Create the chat form window with proper menu
+    // Create the chat form window with proper menu and child clipping
     m_hWnd = CreateWindowW(
         L"ChatFormClass",
         L"Soldato",
-        WS_OVERLAPPEDWINDOW,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT,
         800, 600,
         m_hParent,
@@ -227,11 +227,11 @@ m_hPendingIndicatorBorderPen(nullptr)
 
         // Calculate split layout: chat on left (70%), peer panel on right (30%)
         int chatWidth = static_cast<int>(width * 0.7);
-        int peerWidth = width - chatWidth;
+        int peerWidth = width - chatWidth - 10; // Subtract 10px for right margin
 
-        // Position peer panel on the right
+        // Position peer panel on the right - align with chat controls (10px top margin)
         if (m_peerPanel) {
-            SetWindowPos(m_peerPanel->GetHandle(), nullptr, chatWidth, 0, peerWidth, height, SWP_NOZORDER);
+            SetWindowPos(m_peerPanel->GetHandle(), nullptr, chatWidth, 10, peerWidth, height - 45, SWP_NOZORDER);
         }
     }
 }
@@ -362,8 +362,8 @@ LRESULT CALLBACK ChatForm::ChatFormProc(HWND hWnd, UINT message, WPARAM wParam, 
 
 LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 {
-    // Debug: Log important messages
-    if (message == WM_COMMAND || message == WM_CLOSE || message == WM_DESTROY || message == WM_SIZE) {
+    // Debug: Log important messages (excluding WM_SIZE to reduce resize spam)
+    if (message == WM_COMMAND || message == WM_CLOSE || message == WM_DESTROY) {
         std::ostringstream oss;
         oss << "ChatForm: Received message 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << message;
         DEBUG_LOG(oss.str());
@@ -435,6 +435,9 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_TIMER:
         return OnTimer(wParam);
+
+    case WM_GETMINMAXINFO:
+        return OnGetMinMaxInfo(lParam);
 
     case WM_DESTROY:
         DEBUG_LOG("ChatForm: WM_DESTROY received - posting quit message");
@@ -627,7 +630,7 @@ LRESULT ChatForm::OnSize(WPARAM /*wParam*/, LPARAM lParam)
 
     // Calculate split layout: chat on left (70%), peer panel on right (30%)
     int chatWidth = static_cast<int>(width * 0.7);
-    int peerWidth = width - chatWidth;
+    int peerWidth = width - chatWidth - 10; // Subtract 10px for right margin
 
     // Resize chat ListBox
     SetWindowPos(m_hChatListBox, nullptr, 10, 10, chatWidth - 20, height - 80, SWP_NOZORDER);
@@ -638,9 +641,9 @@ LRESULT ChatForm::OnSize(WPARAM /*wParam*/, LPARAM lParam)
     // Move send button
     SetWindowPos(m_hSendButton, nullptr, chatWidth - 80, height - 60, 70, 25, SWP_NOZORDER);
 
-    // Position peer panel on the right
+    // Position peer panel on the right - align with chat controls (10px top margin)
     if (m_peerPanel) {
-        SetWindowPos(m_peerPanel->GetHandle(), nullptr, chatWidth, 0, peerWidth, height, SWP_NOZORDER);
+        SetWindowPos(m_peerPanel->GetHandle(), nullptr, chatWidth, 10, peerWidth, height - 45, SWP_NOZORDER);
     }
     return 0;
 }
@@ -713,6 +716,19 @@ LRESULT ChatForm::OnTimer(WPARAM wParam)
     if (wParam == 1) { // Our timer ID
         PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
     }
+    return 0;
+}
+
+LRESULT ChatForm::OnGetMinMaxInfo(LPARAM lParam)
+{
+    MINMAXINFO* pMinMaxInfo = (MINMAXINFO*)lParam;
+
+    // Set minimum window size
+    // Minimum width: 600px (enough for chat + peer panel with reasonable proportions)
+    // Minimum height: 400px (enough for chat area + input controls)
+    pMinMaxInfo->ptMinTrackSize.x = 600;
+    pMinMaxInfo->ptMinTrackSize.y = 400;
+
     return 0;
 }
 

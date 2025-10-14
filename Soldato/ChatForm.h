@@ -115,6 +115,7 @@ private:
     LRESULT OnSize(WPARAM wParam, LPARAM lParam);
     LRESULT OnPaint();
     LRESULT OnTimer(WPARAM wParam);
+    LRESULT OnGetMinMaxInfo(LPARAM lParam);
     LRESULT OnKeyDown(WPARAM wParam);
     LRESULT OnMeasureItem(LPARAM lParam);
     LRESULT OnDrawItem(LPARAM lParam);
