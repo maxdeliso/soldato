@@ -3,6 +3,7 @@
 #include "Resource.h"
 #include "StringUtils.h"
 #include "DebugUtils.h"
+#include "Colors.h"
 #include <sstream>
 #include <iomanip>
 #include <ctime>
@@ -15,14 +16,20 @@
 #define LB_SETTEXTCOLOR 0x0193
 #endif
 
-// Control IDs - using enum class for type safety
 enum class PeerControlId {
     PeerList = 2001,
     PeerCount = 2002
 };
 
 PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
-    : m_hParent(parent), m_hWnd(nullptr), m_hPeerList(nullptr), m_hPeerCountLabel(nullptr), m_hFont(nullptr), m_hBkgBrush(nullptr), m_hNeonPen(nullptr), m_hInstance(hInstance) {
+    : m_hParent(parent),
+      m_hWnd(nullptr),
+      m_hPeerList(nullptr),
+      m_hPeerCountLabel(nullptr),
+      m_hFont(nullptr),
+      m_hBkgBrush(nullptr),
+      m_hNeonPen(nullptr),
+      m_hInstance(hInstance) {
 
     DEBUG_LOG("PeerPanel: Constructor started\n");
 
@@ -36,9 +43,9 @@ PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
     wcex.hInstance = m_hInstance;
     wcex.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SOLDATO));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    m_hBkgBrush = CreateSolidBrush(RGB(0, 15, 0)); // Dark green background
-    m_hNeonPen = CreatePen(PS_SOLID, 1, RGB(0, 255, 0)); // Bright green neon pen
-    wcex.hbrBackground = m_hBkgBrush;
+    m_hBkgBrush = CreateSolidBrush(SoldatoColors::GUNMETAL_MEDIUM); // Gunmetal Gray for child controls
+    m_hNeonPen = CreatePen(PS_SOLID, 1, SoldatoColors::NEON_GREEN); // Bright green neon pen
+    wcex.hbrBackground = (HBRUSH)GetStockObject(NULL_BRUSH); // Use NULL_BRUSH for transparency
     wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = L"PeerPanelClass";
     wcex.hIconSm = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SMALL));
@@ -48,10 +55,10 @@ PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
 
     // Create the peer panel window
     m_hWnd = CreateWindowExW(
-        WS_EX_CLIENTEDGE,
+        0,
         L"PeerPanelClass",
         L"Known Peers",
-        WS_CHILD | WS_VISIBLE | WS_BORDER,
+        WS_CHILD | WS_VISIBLE,
         0, 0, 300, 400,
         m_hParent,
         nullptr,
@@ -71,7 +78,6 @@ PeerPanel::PeerPanel(HWND parent, HINSTANCE hInstance)
 }
 
 PeerPanel::~PeerPanel() {
-    // Clean up GDI objects in proper order
     if (m_hFont) {
         DeleteObject(m_hFont);
         m_hFont = nullptr;
@@ -109,7 +115,7 @@ LRESULT CALLBACK PeerPanel::PeerPanelProc(HWND hWnd, UINT message, WPARAM wParam
     return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
-LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) const {
     switch (message) {
     case WM_CREATE:
         // WM_CREATE is fully handled, we can return 0
@@ -127,40 +133,22 @@ LRESULT PeerPanel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             SetWindowPos(m_hPeerList, nullptr, 10, 40, width - 20, height - 50, SWP_NOZORDER);
         }
         // Let this fall through to DefWindowProc for proper child control management
+        [[fallthrough]];
 
-    case WM_PAINT:
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORLISTBOX:
         {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(m_hWnd, &ps);
-
-            // Cyberpunk background
-            RECT clientRect;
-            GetClientRect(m_hWnd, &clientRect);
-
-            // Use pre-created background brush
-            FillRect(hdc, &clientRect, m_hBkgBrush);
-
-            // Use pre-created neon pen for border
-            HPEN oldPen = (HPEN)SelectObject(hdc, m_hNeonPen);
-
-            // Draw border
-            MoveToEx(hdc, 0, 0, nullptr);
-            LineTo(hdc, clientRect.right - 1, 0);
-            LineTo(hdc, clientRect.right - 1, clientRect.bottom - 1);
-            LineTo(hdc, 0, clientRect.bottom - 1);
-            LineTo(hdc, 0, 0);
-
-            SelectObject(hdc, oldPen);
-
-            EndPaint(m_hWnd, &ps);
+            HDC hdc = (HDC)wParam;
+            SetBkColor(hdc, SoldatoColors::GUNMETAL_MEDIUM);
+            SetTextColor(hdc, SoldatoColors::NEON_GREEN);
+            return (LRESULT)m_hBkgBrush;
         }
-        // For WM_PAINT, returning 0 is acceptable after BeginPaint/EndPaint,
-        // but allowing it to fall through is also safe and simpler
-        return 0;
+
+    case WM_ERASEBKGND:
+        // Don't erase background - allows parent's drawing to show through
+        return TRUE;
     }
 
-    // Any message not handled above (including WM_SIZE now)
-    // MUST be passed to the default window procedure
     return DefWindowProc(m_hWnd, message, wParam, lParam);
 }
 
@@ -169,7 +157,7 @@ void PeerPanel::InitializeControls() {
 
     // Create peer count label
     m_hPeerCountLabel = CreateWindowExW(
-        0,
+        WS_EX_CLIENTEDGE,
         L"STATIC",
         L"0 peers",
         WS_CHILD | WS_VISIBLE | SS_CENTER,
@@ -193,7 +181,7 @@ void PeerPanel::InitializeControls() {
         WS_EX_CLIENTEDGE,
         L"LISTBOX",
         L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER | LBS_NOTIFY,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
         10, 40, 280, 350,
         m_hWnd,
         (HMENU)static_cast<int>(PeerControlId::PeerList),
@@ -203,10 +191,6 @@ void PeerPanel::InitializeControls() {
 
     // Set font for peer list
     SendMessage(m_hPeerList, WM_SETFONT, (WPARAM)m_hFont, TRUE);
-
-    // Set cyberpunk colors for peer list (using symbolic constants)
-    SendMessage(m_hPeerList, LB_SETBKCOLOR, 0, RGB(0, 10, 0)); // Dark green background
-    SendMessage(m_hPeerList, LB_SETTEXTCOLOR, 0, RGB(0, 255, 0)); // Bright green text
 
     // Initial state
     DEBUG_LOG("PeerPanel: About to call UpdatePeerCount\n");

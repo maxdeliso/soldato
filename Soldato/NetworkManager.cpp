@@ -2,12 +2,13 @@
 #include "NetworkManager.h"
 #include "ChatForm.h"  // Include for custom message definitions
 #include "JsonUtils.h"
+#include "DebugUtils.h"
 #include <iostream>
 #include <sstream>
 #include <ctime>
 
 // Helper function to get a descriptive error string
-void LogWinsockError(const std::string& context) {
+static void LogWinsockError(const std::string& context) {
     int error_code = WSAGetLastError();
     char* msg_buf = nullptr;
     FormatMessageA(
@@ -21,14 +22,15 @@ void LogWinsockError(const std::string& context) {
         LocalFree(msg_buf);
     }
 
-    // Use OutputDebugStringA for logging
-    OutputDebugStringA(error_message.c_str());
+    // Use DEBUG_LOG for logging
+    DEBUG_LOG(error_message);
 }
 
 WinsockManager NetworkManager::s_winsockManager;
 
 NetworkManager::NetworkManager()
     : m_socket(INVALID_SOCKET)
+    , m_multicastAddr{}
     , m_connected(false)
     , m_port(0)
     , m_socketEvent(NULL)
@@ -56,7 +58,7 @@ NetworkManager& NetworkManager::GetInstance()
     // Ensure Winsock is initialized
     if (!s_winsockManager.IsInitialized()) {
         // This should not happen, but if it does, we need to handle it
-        OutputDebugStringA("NetworkManager: Winsock initialization failed!\n");
+        DEBUG_LOG("NetworkManager: Winsock initialization failed!");
     }
 
     return instance;
@@ -128,11 +130,11 @@ void NetworkManager::CleanupSocketEvents()
     }
 }
 
-bool NetworkManager::Connect(const std::string& multicastIP, int port, const std::string& username)
+bool NetworkManager::Connect(const std::string& multicastIP, int port)
 {
     // Fail fast if already connected.
     if (m_connected.load()) {
-        OutputDebugStringA("Connect() called while already connected. Ignoring.");
+        DEBUG_LOG("Connect() called while already connected. Ignoring.");
         return false;
     }
 
@@ -141,11 +143,15 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
 
     m_multicastIP = multicastIP;
     m_port = port;
-    m_username = username;
     m_senderId = Message::generateUUID();  // Generate UUID for Teflon compatibility
 
     // Initialize message tracker with our sender ID
     m_messageTracker = std::make_unique<MessageTracker>(m_senderId);
+
+    // Set the notification window for the message tracker
+    if (m_messageTracker && m_hNotifyWnd) {
+        m_messageTracker->SetNotificationWindow(m_hNotifyWnd);
+    }
 
     // Initialize peer tracker with our sender ID
     m_peerTracker = std::make_unique<PeerTracker>(m_senderId);
@@ -156,11 +162,22 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
         return false;
     }
 
-    // Create UDP socket
-    m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    // Create a dual-stack UDP socket
+    m_socket = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
     if (m_socket == INVALID_SOCKET)
     {
         LogWinsockError("socket()");
+        CleanupSocketEvents();
+        return false;
+    }
+
+    // Disable IPv6-only mode to enable dual-stack (support both IPv4 and IPv6)
+    int no = 0;
+    if (setsockopt(m_socket, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&no, sizeof(no)) == SOCKET_ERROR)
+    {
+        LogWinsockError("setsockopt(IPV6_V6ONLY)");
+        closesocket(m_socket);
+        m_socket = INVALID_SOCKET;
         CleanupSocketEvents();
         return false;
     }
@@ -177,10 +194,10 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
     }
 
     // Bind to local address
-    sockaddr_in localAddr = {};
-    localAddr.sin_family = AF_INET;
-    localAddr.sin_addr.s_addr = INADDR_ANY;
-    localAddr.sin_port = htons(static_cast<u_short>(port));
+    sockaddr_in6 localAddr = {};
+    localAddr.sin6_family = AF_INET6;
+    localAddr.sin6_addr = in6addr_any; // The IPv6 equivalent of INADDR_ANY
+    localAddr.sin6_port = htons(static_cast<u_short>(port));
 
     if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
     {
@@ -191,23 +208,62 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
         return false;
     }
 
-    // Set up multicast address
-    m_multicastAddr.sin_family = AF_INET;
-    m_multicastAddr.sin_port = htons(static_cast<u_short>(port));
-    inet_pton(AF_INET, multicastIP.c_str(), &m_multicastAddr.sin_addr);
+    // Set up multicast address - detect IPv4 vs IPv6
+    memset(&m_multicastAddr, 0, sizeof(m_multicastAddr));
 
-    // Join multicast group
-    ip_mreq multicastRequest = {};
-    inet_pton(AF_INET, multicastIP.c_str(), &multicastRequest.imr_multiaddr);
-    multicastRequest.imr_interface.s_addr = INADDR_ANY;
-
-    if (setsockopt(m_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
+    // Try to parse as IPv6 first
+    struct in6_addr testV6;
+    if (inet_pton(AF_INET6, multicastIP.c_str(), &testV6) == 1)
     {
-        LogWinsockError("setsockopt(IP_ADD_MEMBERSHIP)");
-        closesocket(m_socket);
-        m_socket = INVALID_SOCKET;
-        CleanupSocketEvents();
-        return false;
+        // It's an IPv6 address
+        sockaddr_in6* multicastAddrV6 = (sockaddr_in6*)&m_multicastAddr;
+        multicastAddrV6->sin6_family = AF_INET6;
+        multicastAddrV6->sin6_port = htons(static_cast<u_short>(port));
+        multicastAddrV6->sin6_addr = testV6;
+
+        // Join IPv6 multicast group
+        ipv6_mreq multicastRequest = {};
+        multicastRequest.ipv6mr_multiaddr = testV6;
+        multicastRequest.ipv6mr_interface = 0; // Default interface
+
+        if (setsockopt(m_socket, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
+        {
+            LogWinsockError("setsockopt(IPV6_ADD_MEMBERSHIP)");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
+    }
+    else
+    {
+        // Try IPv4
+        sockaddr_in* multicastAddrV4 = (sockaddr_in*)&m_multicastAddr;
+        multicastAddrV4->sin_family = AF_INET;
+        multicastAddrV4->sin_port = htons(static_cast<u_short>(port));
+
+        if (inet_pton(AF_INET, multicastIP.c_str(), &multicastAddrV4->sin_addr) != 1)
+        {
+            DEBUG_LOG("Invalid multicast IP address format");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
+
+        // Join IPv4 multicast group
+        ip_mreq multicastRequest = {};
+        multicastRequest.imr_multiaddr = multicastAddrV4->sin_addr;
+        multicastRequest.imr_interface.s_addr = INADDR_ANY;
+
+        if (setsockopt(m_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
+        {
+            LogWinsockError("setsockopt(IP_ADD_MEMBERSHIP)");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
     }
 
     // Associate socket with event object for read events
@@ -236,13 +292,13 @@ bool NetworkManager::Connect(const std::string& multicastIP, int port, const std
 
     // Reset thread running flag and create new event thread
     m_threadRunning = true;
-    OutputDebugStringA("Connect: Creating new event thread\n");
+    DEBUG_LOG("Connect: Creating new event thread");
     m_eventThread = std::thread(&NetworkManager::EventThreadFunction, this);
-    OutputDebugStringA("Connect: Event thread created\n");
+    DEBUG_LOG("Connect: Event thread created");
 
     // Start send worker thread
     m_sendWorkerRunning = true;
-    OutputDebugStringA("Connect: Set m_sendWorkerRunning = true\n");
+    DEBUG_LOG("Connect: Set m_sendWorkerRunning = true");
 
     // Clear any old messages in the send queue
     {
@@ -298,7 +354,7 @@ void NetworkManager::Disconnect()
         {
             std::lock_guard<std::mutex> lock(m_sendQueueMutex);
             m_sendWorkerRunning = false;
-            OutputDebugStringA("Disconnect: Set m_sendWorkerRunning = false\n");
+            DEBUG_LOG("Disconnect: Set m_sendWorkerRunning = false");
         }
         m_sendQueueCondition.notify_all();
 
@@ -342,47 +398,38 @@ void NetworkManager::Disconnect()
     }
 }
 
-bool NetworkManager::SendMessage(const std::string& message)
+bool NetworkManager::SendMessage(const Message& message)
 {
-    OutputDebugStringA(("SendMessage: Called with message: " + message + "\n").c_str());
+    DEBUG_LOG("SendMessage: Called with message ID: " + message.messageId);
 
     if (!m_connected.load() || m_socket == INVALID_SOCKET)
     {
-        OutputDebugStringA("SendMessage: Blocked - not connected or invalid socket\n");
+        DEBUG_LOG("SendMessage: Blocked - not connected or invalid socket");
         return false;
     }
 
-    // Try to parse the message as JSON first (from ChatForm)
-    Message teflonMessage;
-    std::optional<Message> jsonMsgOpt = JsonUtils::DeserializeMessage(message);
-    if (jsonMsgOpt) {
-        // This is a pre-formatted message from ChatForm, use it directly but fix the senderId
-        teflonMessage = *jsonMsgOpt;
-        teflonMessage.senderId = m_senderId; // Replace "You" with actual UUID
-        OutputDebugStringA("SendMessage: Using pre-formatted message from ChatForm, fixed senderId\n");
-    } else {
-        // This is a plain string, create a new message
-        teflonMessage = CreateChatMessage(m_senderId, message);
-        OutputDebugStringA("SendMessage: Creating new Teflon message for plain string\n");
-    }
+    // Create a copy and ensure senderId is set correctly
+    Message teflonMessage = message;
+    teflonMessage.senderId = m_senderId; // Ensure sender ID is our actual UUID
+    DEBUG_LOG("SendMessage: Using Message object, senderId: " + teflonMessage.senderId);
 
     // Track the message for ACK/NACK (lightweight - only UUID and sender)
     if (m_messageTracker) {
-        OutputDebugStringA("SendMessage: Tracking message\n");
+        DEBUG_LOG("SendMessage: Tracking message");
         m_messageTracker->trackMessage(teflonMessage.messageId, teflonMessage.senderId);
     }
 
-    // Serialize message as JSON
-    OutputDebugStringA("SendMessage: Serializing message\n");
+    // Serialize message as JSON (single serialization point)
+    DEBUG_LOG("SendMessage: Serializing message");
     std::string jsonMessage = JsonUtils::SerializeMessage(teflonMessage);
 
-    OutputDebugStringA(("SendMessage: Calling sendto with " + std::to_string(jsonMessage.length()) + " bytes\n").c_str());
+    DEBUG_LOG("SendMessage: Calling sendto with " + std::to_string(jsonMessage.length()) + " bytes");
     int result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
                        (sockaddr*)&m_multicastAddr, sizeof(m_multicastAddr));
 
     if (result != SOCKET_ERROR)
     {
-        OutputDebugStringA("SendMessage: sendto succeeded\n");
+        DEBUG_LOG("SendMessage: sendto succeeded");
         // Notify message sent
         SocketEventCallback socketCallback;
         {
@@ -391,26 +438,26 @@ bool NetworkManager::SendMessage(const std::string& message)
         }
         if (socketCallback)
         {
-            OutputDebugStringA("SendMessage: Calling socket callback\n");
-            socketCallback(SocketEventType::MessageSent, "Message sent: " + message);
+            DEBUG_LOG("SendMessage: Calling socket callback");
+            socketCallback(SocketEventType::MessageSent, "Message sent: " + message.body);
         }
         else
         {
-            OutputDebugStringA("SendMessage: socketCallback is null\n");
+            DEBUG_LOG("SendMessage: socketCallback is null");
         }
         return true;
     }
     else
     {
-        OutputDebugStringA(("SendMessage: sendto failed with error: " + std::to_string(WSAGetLastError()) + "\n").c_str());
+        DEBUG_LOG("SendMessage: sendto failed with error: " + std::to_string(WSAGetLastError()));
     }
 
     return false;
 }
 
-void NetworkManager::SendMessageAsync(const std::string& message)
+void NetworkManager::SendMessageAsync(const Message& message)
 {
-    OutputDebugStringA(("SendMessageAsync: Called with message: " + message + "\n").c_str());
+    DEBUG_LOG("SendMessageAsync: Called with message ID: " + message.messageId);
 
     if (!m_connected.load() || m_socket == INVALID_SOCKET)
     {
@@ -424,7 +471,7 @@ void NetworkManager::SendMessageAsync(const std::string& message)
             std::string reason = !m_connected.load() ? "not connected" : "invalid socket";
             socketCallback(SocketEventType::SendBlocked, "SendMessageAsync blocked: " + reason);
         }
-        OutputDebugStringA("SendMessageAsync: Blocked - not connected\n");
+        DEBUG_LOG("SendMessageAsync: Blocked - not connected");
         return;
     }
 
@@ -432,21 +479,21 @@ void NetworkManager::SendMessageAsync(const std::string& message)
     {
         std::lock_guard<std::mutex> lock(m_sendQueueMutex);
         m_sendQueue.push(message);
-        OutputDebugStringA(("SendMessageAsync: Message queued, queue size: " + std::to_string(m_sendQueue.size()) + "\n").c_str());
+        DEBUG_LOG("SendMessageAsync: Message queued, queue size: " + std::to_string(m_sendQueue.size()));
     }
     m_sendQueueCondition.notify_one();
-    OutputDebugStringA("SendMessageAsync: Notified worker thread\n");
+    DEBUG_LOG("SendMessageAsync: Notified worker thread");
 }
 
 void NetworkManager::SendWorkerThreadFunction()
 {
     // Simple debug: Log that thread started
-    OutputDebugStringA("SendWorkerThreadFunction: Thread started\n");
+    DEBUG_LOG("SendWorkerThreadFunction: Thread started");
 
     while (m_sendWorkerRunning)
     {
-        OutputDebugStringA("SendWorkerThreadFunction: Starting loop iteration\n");
-        std::string message;
+        DEBUG_LOG("SendWorkerThreadFunction: Starting loop iteration");
+        std::optional<Message> messageOpt;
 
         // Wait for messages in queue
         {
@@ -456,36 +503,34 @@ void NetworkManager::SendWorkerThreadFunction()
             });
 
             if (!m_sendWorkerRunning) {
-                OutputDebugStringA("SendWorkerThreadFunction: Exiting because m_sendWorkerRunning is false\n");
+                DEBUG_LOG("SendWorkerThreadFunction: Exiting because m_sendWorkerRunning is false");
                 break;
             }
 
             if (!m_sendQueue.empty())
             {
-                message = m_sendQueue.front();
+                messageOpt = m_sendQueue.front();
                 m_sendQueue.pop();
-                OutputDebugStringA(("SendWorkerThreadFunction: Processing message: " + message + "\n").c_str());
+                DEBUG_LOG("SendWorkerThreadFunction: Processing message ID: " + messageOpt->messageId);
             }
         }
 
-        if (!message.empty())
+        if (messageOpt.has_value())
         {
             // Process the message (this is now on a background thread)
-            SendMessage(message);
-            OutputDebugStringA("SendWorkerThreadFunction: Message processing completed\n");
+            SendMessage(*messageOpt);
+            DEBUG_LOG("SendWorkerThreadFunction: Message processing completed");
         }
 
-        OutputDebugStringA("SendWorkerThreadFunction: End of loop iteration, m_sendWorkerRunning = ");
-        OutputDebugStringA(m_sendWorkerRunning.load() ? "true" : "false");
-        OutputDebugStringA("\n");
+        DEBUG_LOG(std::string("SendWorkerThreadFunction: End of loop iteration, m_sendWorkerRunning = ") + (m_sendWorkerRunning.load() ? "true" : "false"));
     }
 
-    OutputDebugStringA("SendWorkerThreadFunction: Thread exiting\n");
+    DEBUG_LOG("SendWorkerThreadFunction: Thread exiting");
 }
 
 void NetworkManager::EventThreadFunction()
 {
-    OutputDebugStringA("EventThread: Thread started\n");
+    DEBUG_LOG("EventThread: Thread started");
     WSAEVENT events[2] = { m_socketEvent, m_shutdownEvent };
 
     while (m_threadRunning)
@@ -516,7 +561,7 @@ void NetworkManager::EventThreadFunction()
         }
     }
 
-    OutputDebugStringA("EventThread: Thread exiting\n");
+    DEBUG_LOG("EventThread: Thread exiting");
 }
 
 void NetworkManager::HandleSocketEvent(WSAEVENT event)
@@ -568,26 +613,26 @@ void NetworkManager::HandleSocketEvent(WSAEVENT event)
 void NetworkManager::ProcessSocketData()
 {
     // Use a larger buffer to handle larger UDP packets (max UDP payload size)
+    // Allocate on heap to avoid stack overflow warning
     constexpr int MAX_UDP_SIZE = 65507;
-    char buffer[MAX_UDP_SIZE];
-    sockaddr_in fromAddr;
-    int fromLen = sizeof(fromAddr);
+    std::unique_ptr<char[]> buffer = std::make_unique<char[]>(MAX_UDP_SIZE);
+    sockaddr_storage fromAddr; // Use generic storage to handle both IPv4 and IPv6
+    int fromLen = sizeof(fromAddr); // Size of the storage
 
-    int bytesReceived = recvfrom(m_socket, buffer, MAX_UDP_SIZE, 0,
+    int bytesReceived = recvfrom(m_socket, buffer.get(), MAX_UDP_SIZE, 0,
                                (sockaddr*)&fromAddr, &fromLen);
 
     if (bytesReceived > 0)
     {
         // Construct string using the exact number of bytes received
-        std::string jsonData(buffer, bytesReceived);
-
+        std::string jsonData(buffer.get(), bytesReceived);
 
         // Try to deserialize Teflon-compatible JSON message
         std::optional<Message> teflonMessageOpt = JsonUtils::DeserializeMessage(jsonData);
         if (!teflonMessageOpt) {
             // JSON parse error
-            OutputDebugStringA("JSON parse error: Failed to deserialize message\n");
-            OutputDebugStringA(("Failed JSON data: " + jsonData + "\n").c_str());
+            DEBUG_LOG("JSON parse error: Failed to deserialize message");
+            DEBUG_LOG("Failed JSON data: " + jsonData);
 
             SocketEventCallback parseErrorCallback;
             {
@@ -603,12 +648,28 @@ void NetworkManager::ProcessSocketData()
         Message teflonMessage = *teflonMessageOpt;
 
         // Extract sender IP address for peer tracking
-        char senderIP[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &fromAddr.sin_addr, senderIP, INET_ADDRSTRLEN);
+        char senderIP[INET6_ADDRSTRLEN]; // Use the larger IPv6 buffer
+        std::string senderIPString = "unknown";
+
+        // Check which address family we received
+        if (fromAddr.ss_family == AF_INET)
+        {
+            // It's an IPv4 address
+            auto* ipv4Addr = (sockaddr_in*)&fromAddr;
+            inet_ntop(AF_INET, &ipv4Addr->sin_addr, senderIP, sizeof(senderIP));
+            senderIPString = std::string(senderIP);
+        }
+        else if (fromAddr.ss_family == AF_INET6)
+        {
+            // It's an IPv6 address
+            auto* ipv6Addr = (sockaddr_in6*)&fromAddr;
+            inet_ntop(AF_INET6, &ipv6Addr->sin6_addr, senderIP, sizeof(senderIP));
+            senderIPString = std::string(senderIP);
+        }
 
         // Update peer tracker with sender information
         if (m_peerTracker) {
-            m_peerTracker->updatePeer(teflonMessage.senderId, std::string(senderIP));
+            m_peerTracker->updatePeer(teflonMessage.senderId, senderIPString);
 
             // Notify the UI that the peer list has changed
             if (m_hNotifyWnd) {
@@ -665,7 +726,7 @@ void NetworkManager::SendAcknowledgment(const std::string& originalMessageId, bo
     std::string jsonMessage = JsonUtils::SerializeMessage(ackMessage);
 
     // Debug: Log the acknowledgment JSON being sent
-    OutputDebugStringA(("SendAcknowledgment: Sending ACK JSON: " + jsonMessage + "\n").c_str());
+    DEBUG_LOG("SendAcknowledgment: Sending ACK JSON: " + jsonMessage);
 
     int result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
                        (sockaddr*)&m_multicastAddr, sizeof(m_multicastAddr));
@@ -690,16 +751,18 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
         return;
     }
 
-
-    // Validate checksum
     uint32_t calculatedChecksum = Message::calculateChecksum(message.body);
     bool checksumValid = (calculatedChecksum == message.checksum);
 
     // Handle different message types
     if (message.isAcknowledgment()) {
-        // Process ACK/NACK - but don't send ACKs for ACKs to prevent feedback loops
         if (m_messageTracker) {
             m_messageTracker->processAcknowledgment(message);
+        }
+
+        // Notify UI thread to update ACK status
+        if (m_hNotifyWnd) {
+            PostMessage(m_hNotifyWnd, WM_APP_UPDATE_ACK, 0, 0);
         }
 
         SocketEventCallback socketCallback;
@@ -717,13 +780,6 @@ void NetworkManager::ProcessIncomingMessage(const Message& message)
         if (checksumValid) {
             // Send ACK for valid message
             SendAcknowledgment(message.messageId, true);
-
-            // Create a thread-safe local copy of the username
-            std::string username_copy;
-            {
-                std::lock_guard<std::mutex> lock(m_memberMutex);
-                username_copy = m_username;
-            }
 
             // Queue the message for UI thread processing (notify-and-pull pattern)
             {

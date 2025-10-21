@@ -7,9 +7,9 @@
 #include "NetworkManager.h"
 #include "JsonUtils.h"
 #include "Version.h"
-// Note: json.hpp removed, now using yyjson via JsonUtils
+#include "Colors.h"
+#include "GoL.h"
 #include <commctrl.h>
-#include <richedit.h>
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -37,7 +37,7 @@ enum class MessageStatus {
 };
 
 // Helper function to get status symbol
-std::wstring GetStatusSymbol(MessageStatus status) {
+static std::wstring GetStatusSymbol(MessageStatus status) {
     switch (status) {
         case MessageStatus::TimedOut:
             return L"T";
@@ -79,7 +79,7 @@ namespace CyberpunkTheme {
 }
 
 // Subclass procedure for message input
-LRESULT CALLBACK MessageInputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+static LRESULT CALLBACK MessageInputProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (message == WM_CHAR && wParam == VK_RETURN)
     {
@@ -114,8 +114,6 @@ m_connectDialog(nullptr),
 m_peerPanel(nullptr),
 m_hFont(nullptr),
 m_hInstance(hInstance),
-// Note: m_jsonMsg removed, now using yyjson via JsonUtils
-// Initialize GDI objects to nullptr - will be created in constructor body
 m_hAckBgBrush(nullptr),
 m_hTimeoutBgBrush(nullptr),
 m_hNackBgBrush(nullptr),
@@ -135,12 +133,14 @@ m_hPendingIndicatorBrush(nullptr),
 m_hAckIndicatorBorderPen(nullptr),
 m_hTimeoutIndicatorBorderPen(nullptr),
 m_hNackIndicatorBorderPen(nullptr),
-m_hPendingIndicatorBorderPen(nullptr)
+m_hPendingIndicatorBorderPen(nullptr),
+m_hGrayBgBrush(nullptr),
+m_hGrayBorderPen(nullptr)
 {
     // Resolve the proper module handle
     m_hInstance = ResolveModuleHandle(m_hInstance);
 
-    // Register the chat form window class - simplified
+    // Register the chat form window class
     static bool classRegistered = false;
     if (!classRegistered) {
         WNDCLASSEXW wcex = {};
@@ -201,9 +201,6 @@ m_hPendingIndicatorBorderPen(nullptr)
         // Message tracking is now handled by NetworkManager
         DEBUG_LOG("ChatForm: Using NetworkManager's MessageTracker");
 
-        // Set up a timer to periodically update acknowledgment statuses
-        SetTimer(m_hWnd, 1, 2000, nullptr); // 2 second timer to reduce flickering
-
         // Initialize UI state based on connection status
         UpdateConnectionUI();
 
@@ -238,17 +235,6 @@ m_hPendingIndicatorBorderPen(nullptr)
 
 ChatForm::~ChatForm()
 {
-    // Clear network manager callbacks first to prevent race conditions
-    if (m_networkManager)
-    {
-        // Message callback is no longer used
-    }
-
-    // Kill the timer
-    if (m_hWnd) {
-        KillTimer(m_hWnd, 1);
-    }
-
     // Clean up GDI objects
     DestroyGDIObjects();
 
@@ -272,33 +258,37 @@ ChatForm::~ChatForm()
 
 void ChatForm::CreateGDIObjects()
 {
+    using namespace SoldatoColors;
+
     // Create background brushes
-    m_hAckBgBrush = CreateSolidBrush(RGB(5, 30, 5));        // Dark green for ACK messages
-    m_hTimeoutBgBrush = CreateSolidBrush(RGB(40, 10, 10));  // Dark red for timed out messages
-    m_hNackBgBrush = CreateSolidBrush(RGB(30, 10, 10));     // Dark red for NACK messages
-    m_hOwnMessageBgBrush = CreateSolidBrush(RGB(5, 15, 25)); // Dark blue for own messages
-    m_hDefaultBgBrush = CreateSolidBrush(RGB(5, 25, 5));    // Default dark green
-    m_hBackgroundBrush = CreateSolidBrush(CyberpunkTheme::BACKGROUND_COLOR); // Main window background
+    m_hAckBgBrush = CreateSolidBrush(MSG_BG_ACK);
+    m_hTimeoutBgBrush = CreateSolidBrush(MSG_BG_TIMEOUT);
+    m_hNackBgBrush = CreateSolidBrush(MSG_BG_NACK);
+    m_hOwnMessageBgBrush = CreateSolidBrush(MSG_BG_OWN);
+    m_hDefaultBgBrush = CreateSolidBrush(GUNMETAL_DARK);
+    m_hBackgroundBrush = CreateSolidBrush(BACKGROUND_MAIN);
+    m_hGrayBgBrush = CreateSolidBrush(GUNMETAL_MEDIUM);
 
     // Create border pens
-    m_hAckBorderPen = CreatePen(PS_SOLID, 1, RGB(10, 60, 10));
-    m_hTimeoutBorderPen = CreatePen(PS_SOLID, 1, RGB(80, 20, 20));
-    m_hNackBorderPen = CreatePen(PS_SOLID, 1, RGB(60, 20, 20));
-    m_hOwnMessageBorderPen = CreatePen(PS_SOLID, 1, RGB(10, 30, 50));
-    m_hDefaultBorderPen = CreatePen(PS_SOLID, 1, RGB(10, 50, 10));
-    m_hNeonPen = CreatePen(PS_SOLID, 1, CyberpunkTheme::GRID_COLOR);
+    m_hAckBorderPen = CreatePen(PS_SOLID, 1, MSG_BORDER_ACK);
+    m_hTimeoutBorderPen = CreatePen(PS_SOLID, 1, MSG_BORDER_TIMEOUT);
+    m_hNackBorderPen = CreatePen(PS_SOLID, 1, MSG_BORDER_NACK);
+    m_hOwnMessageBorderPen = CreatePen(PS_SOLID, 1, MSG_BORDER_OWN);
+    m_hDefaultBorderPen = CreatePen(PS_SOLID, 1, GUNMETAL_BORDER);
+    m_hNeonPen = CreatePen(PS_SOLID, 1, NEON_GREEN);
+    m_hGrayBorderPen = CreatePen(PS_SOLID, 1, GUNMETAL_BORDER);
 
     // Create indicator brushes
-    m_hAckIndicatorBrush = CreateSolidBrush(RGB(100, 255, 100));      // Green for ACK
-    m_hTimeoutIndicatorBrush = CreateSolidBrush(RGB(255, 100, 100));  // Red for timeout
-    m_hNackIndicatorBrush = CreateSolidBrush(RGB(255, 150, 150));     // Light red for NACK
-    m_hPendingIndicatorBrush = CreateSolidBrush(RGB(255, 255, 100));  // Yellow for pending
+    m_hAckIndicatorBrush = CreateSolidBrush(INDICATOR_ACK);
+    m_hTimeoutIndicatorBrush = CreateSolidBrush(INDICATOR_TIMEOUT);
+    m_hNackIndicatorBrush = CreateSolidBrush(INDICATOR_NACK);
+    m_hPendingIndicatorBrush = CreateSolidBrush(INDICATOR_PENDING);
 
     // Create indicator border pens
-    m_hAckIndicatorBorderPen = CreatePen(PS_SOLID, 1, RGB(150, 255, 150));
-    m_hTimeoutIndicatorBorderPen = CreatePen(PS_SOLID, 1, RGB(255, 150, 150));
-    m_hNackIndicatorBorderPen = CreatePen(PS_SOLID, 1, RGB(255, 200, 200));
-    m_hPendingIndicatorBorderPen = CreatePen(PS_SOLID, 1, RGB(255, 255, 150));
+    m_hAckIndicatorBorderPen = CreatePen(PS_SOLID, 1, INDICATOR_BORDER_ACK);
+    m_hTimeoutIndicatorBorderPen = CreatePen(PS_SOLID, 1, INDICATOR_BORDER_TIMEOUT);
+    m_hNackIndicatorBorderPen = CreatePen(PS_SOLID, 1, INDICATOR_BORDER_NACK);
+    m_hPendingIndicatorBorderPen = CreatePen(PS_SOLID, 1, INDICATOR_BORDER_PENDING);
 
     DEBUG_LOG("ChatForm: GDI objects created successfully");
 }
@@ -332,6 +322,10 @@ void ChatForm::DestroyGDIObjects()
     if (m_hTimeoutIndicatorBorderPen) { DeleteObject(m_hTimeoutIndicatorBorderPen); m_hTimeoutIndicatorBorderPen = nullptr; }
     if (m_hNackIndicatorBorderPen) { DeleteObject(m_hNackIndicatorBorderPen); m_hNackIndicatorBorderPen = nullptr; }
     if (m_hPendingIndicatorBorderPen) { DeleteObject(m_hPendingIndicatorBorderPen); m_hPendingIndicatorBorderPen = nullptr; }
+
+    // Delete gunmetal gray GDI objects
+    if (m_hGrayBgBrush) { DeleteObject(m_hGrayBgBrush); m_hGrayBgBrush = nullptr; }
+    if (m_hGrayBorderPen) { DeleteObject(m_hGrayBorderPen); m_hGrayBorderPen = nullptr; }
 
     DEBUG_LOG("ChatForm: GDI objects destroyed successfully");
 }
@@ -433,8 +427,41 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
     case WM_DRAWITEM:
         return OnDrawItem(lParam);
 
-    case WM_TIMER:
-        return OnTimer(wParam);
+    case WM_CTLCOLORSTATIC:
+        {
+            HDC hdc = (HDC)wParam;
+            // Set the background color to gunmetal gray
+            SetBkColor(hdc, SoldatoColors::GUNMETAL_MEDIUM);
+            // Set the text color to neon green
+            SetTextColor(hdc, SoldatoColors::NEON_GREEN);
+
+            // Return the gunmetal gray background brush for STATIC controls
+            return (LRESULT)m_hGrayBgBrush;
+        }
+
+    case WM_CTLCOLORLISTBOX:
+        {
+            HDC hdc = (HDC)wParam;
+            // Set the background color to gunmetal gray
+            SetBkColor(hdc, SoldatoColors::GUNMETAL_MEDIUM);
+            // Set the text color to neon green
+            SetTextColor(hdc, SoldatoColors::NEON_GREEN);
+
+            // Return the gunmetal gray background brush for LISTBOX controls
+            return (LRESULT)m_hGrayBgBrush;
+        }
+
+    case WM_CTLCOLOREDIT:
+        {
+            HDC hdc = (HDC)wParam;
+            // Set the background color to gunmetal gray
+            SetBkColor(hdc, SoldatoColors::GUNMETAL_MEDIUM);
+            // Set the text color to neon green
+            SetTextColor(hdc, SoldatoColors::NEON_GREEN);
+
+            // Return the gunmetal gray background brush for EDIT controls
+            return (LRESULT)m_hGrayBgBrush;
+        }
 
     case WM_DESTROY:
         DEBUG_LOG("ChatForm: WM_DESTROY received - posting quit message");
@@ -447,7 +474,6 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
     return DefWindowProc(m_hWnd, message, wParam, lParam);
 }
 
-// Refactored message handlers for better code organization
 LRESULT ChatForm::OnCommand(WPARAM wParam, LPARAM /*lParam*/)
 {
     int wmId = LOWORD(wParam);
@@ -645,74 +671,78 @@ LRESULT ChatForm::OnSize(WPARAM /*wParam*/, LPARAM lParam)
     return 0;
 }
 
+// ChatForm.cpp
 LRESULT ChatForm::OnPaint()
 {
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(m_hWnd, &ps);
 
-    // Get client rect only when needed
+    // --- Start Double Buffering ---
     RECT clientRect;
     GetClientRect(m_hWnd, &clientRect);
+    int width = clientRect.right;
+    int height = clientRect.bottom;
 
-    // Use pre-created background brush
-    FillRect(hdc, &clientRect, m_hBackgroundBrush);
+    // Create a memory DC and bitmap
+    HDC memDC = CreateCompatibleDC(hdc);
+    HBITMAP memBitmap = CreateCompatibleBitmap(hdc, width, height);
+    HBITMAP oldBitmap = (HBITMAP)SelectObject(memDC, memBitmap);
 
-    // Use pre-created neon pen for grid and brackets
-    HPEN oldPen = (HPEN)SelectObject(hdc, m_hNeonPen);
+    // Define the memory DC rectangle
+    RECT memRect = {0, 0, width, height};
 
-    // Draw grid pattern
-    for (int x = 0; x < clientRect.right; x += CyberpunkTheme::GRID_SPACING)
+    // 1. Draw solid background to the memory DC
+    FillRect(memDC, &memRect, m_hBackgroundBrush);
+
+    // 2. Draw grid pattern to the memory DC
+    HPEN oldPen = (HPEN)SelectObject(memDC, m_hNeonPen);
+    for (int x = 0; x < width; x += CyberpunkTheme::GRID_SPACING)
     {
-        MoveToEx(hdc, x, 0, nullptr);
-        LineTo(hdc, x, clientRect.bottom);
+        MoveToEx(memDC, x, 0, nullptr);
+        LineTo(memDC, x, height);
     }
-    for (int y = 0; y < clientRect.bottom; y += CyberpunkTheme::GRID_SPACING)
+    for (int y = 0; y < height; y += CyberpunkTheme::GRID_SPACING)
     {
-        MoveToEx(hdc, 0, y, nullptr);
-        LineTo(hdc, clientRect.right, y);
+        MoveToEx(memDC, 0, y, nullptr);
+        LineTo(memDC, width, y);
     }
+    SelectObject(memDC, oldPen); // Restore old pen
 
-    // Draw corner brackets using pre-calculated constants
-    const int endX = CyberpunkTheme::BRACKET_END_X;
-    const int endY = CyberpunkTheme::BRACKET_END_Y;
+    // 3. Draw connection status indicator to the memory DC
+    const int indicatorRadius = 8;
+    const int indicatorPadding = 15;
+    const int indicatorCenterX = indicatorPadding;
+    const int indicatorCenterY = height - indicatorPadding;
 
-    // Top-left
-    MoveToEx(hdc, CyberpunkTheme::TOP_LEFT_X, CyberpunkTheme::TOP_LEFT_Y, nullptr);
-    LineTo(hdc, endX, CyberpunkTheme::TOP_LEFT_Y);
-    MoveToEx(hdc, CyberpunkTheme::TOP_LEFT_X, CyberpunkTheme::TOP_LEFT_Y, nullptr);
-    LineTo(hdc, CyberpunkTheme::TOP_LEFT_X, endY);
+    bool connected = (m_networkManager && m_networkManager->IsConnected());
+    COLORREF statusColor = connected ? SoldatoColors::NEON_GREEN : SoldatoColors::INDICATOR_TIMEOUT;
 
-    // Top-right
-    MoveToEx(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, CyberpunkTheme::TOP_RIGHT_Y, nullptr);
-    LineTo(hdc, clientRect.right - endX, CyberpunkTheme::TOP_RIGHT_Y);
-    MoveToEx(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, CyberpunkTheme::TOP_RIGHT_Y, nullptr);
-    LineTo(hdc, clientRect.right - CyberpunkTheme::TOP_RIGHT_X, endY);
+    HBRUSH hStatusBrush = CreateSolidBrush(statusColor);
+    HPEN hStatusPen = CreatePen(PS_SOLID, 2, statusColor);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(memDC, hStatusBrush);
+    HPEN oldStatusPen = (HPEN)SelectObject(memDC, hStatusPen);
 
-    // Bottom-left
-    MoveToEx(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y, nullptr);
-    LineTo(hdc, endX, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y);
-    MoveToEx(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_LEFT_Y, nullptr);
-    LineTo(hdc, CyberpunkTheme::BOTTOM_LEFT_X, clientRect.bottom - endY);
+    Ellipse(memDC,
+            indicatorCenterX - indicatorRadius,
+            indicatorCenterY - indicatorRadius,
+            indicatorCenterX + indicatorRadius,
+            indicatorCenterY + indicatorRadius);
 
-    // Bottom-right
-    MoveToEx(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y, nullptr);
-    LineTo(hdc, clientRect.right - endX, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y);
-    MoveToEx(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - CyberpunkTheme::BOTTOM_RIGHT_Y, nullptr);
-    LineTo(hdc, clientRect.right - CyberpunkTheme::BOTTOM_RIGHT_X, clientRect.bottom - endY);
+    SelectObject(memDC, oldStatusPen);
+    SelectObject(memDC, oldBrush);
+    DeleteObject(hStatusPen);
+    DeleteObject(hStatusBrush);
 
-    // Restore original pen
-    SelectObject(hdc, oldPen);
+    // 4. Transfer the final image from memory DC to screen DC
+    BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
+
+    // Clean up memory DC
+    SelectObject(memDC, oldBitmap);
+    DeleteObject(memBitmap);
+    DeleteDC(memDC);
+    // --- End Double Buffering ---
 
     EndPaint(m_hWnd, &ps);
-    return 0;
-}
-
-LRESULT ChatForm::OnTimer(WPARAM wParam)
-{
-    // Update acknowledgment statuses periodically
-    if (wParam == 1) { // Our timer ID
-        PostMessage(m_hWnd, WM_APP_UPDATE_ACK, 0, 0);
-    }
     return 0;
 }
 
@@ -723,13 +753,7 @@ LRESULT ChatForm::OnKeyDown(WPARAM wParam)
         PostQuitMessage(0);
         return 0;
     }
-    else if (wParam == VK_F1)
-    {
-        // Test: Manually trigger send message
-        DEBUG_LOG("ChatForm: F1 pressed - manually triggering send");
-        AddChatMessage(L"System", L"Test message sent");
-        return 0;
-    }
+
     return 0;
 }
 
@@ -815,7 +839,9 @@ void ChatForm::InitializeControls()
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         DEFAULT_QUALITY, FIXED_PITCH | FF_DONTCARE, L"Consolas"
     );
-    SendMessage(m_hChatListBox, WM_SETFONT, (WPARAM)m_hFont, TRUE);
+    if (m_hChatListBox) {
+        SendMessage(m_hChatListBox, WM_SETFONT, (WPARAM)m_hFont, TRUE);
+    }
 
     // Create message input field with cyberpunk styling
     m_hMessageInput = CreateWindowExW(
@@ -853,14 +879,13 @@ void ChatForm::InitializeControls()
     }
 
     // Set font for message input
-    SendMessage(m_hMessageInput, WM_SETFONT, (WPARAM)m_hFont, TRUE);
+    if (m_hMessageInput) {
+        SendMessage(m_hMessageInput, WM_SETFONT, (WPARAM)m_hFont, TRUE);
 
-    // Set cyberpunk colors for message input
-    SendMessage(m_hMessageInput, EM_SETBKGNDCOLOR, 0, RGB(0, 10, 0)); // Dark green background
-
-    // Subclass the message input to handle Enter key
-    SetWindowLongPtr(m_hMessageInput, GWLP_USERDATA, (LONG_PTR)GetWindowLongPtr(m_hMessageInput, GWLP_WNDPROC));
-    SetWindowLongPtr(m_hMessageInput, GWLP_WNDPROC, (LONG_PTR)MessageInputProc);
+        // Subclass the message input to handle Enter key
+        SetWindowLongPtr(m_hMessageInput, GWLP_USERDATA, (LONG_PTR)GetWindowLongPtr(m_hMessageInput, GWLP_WNDPROC));
+        SetWindowLongPtr(m_hMessageInput, GWLP_WNDPROC, (LONG_PTR)MessageInputProc);
+    }
 
     // Create send button with cyberpunk styling
     int buttonX = chatWidth - 80;
@@ -908,7 +933,9 @@ void ChatForm::InitializeControls()
     }
 
     // Set font for send button
-    SendMessage(m_hSendButton, WM_SETFONT, (WPARAM)m_hFont, TRUE);
+    if (m_hSendButton) {
+        SendMessage(m_hSendButton, WM_SETFONT, (WPARAM)m_hFont, TRUE);
+    }
 
     // Set cyberpunk colors for send button
     SendMessage(m_hSendButton, BM_SETCHECK, BST_UNCHECKED, 0);
@@ -1038,11 +1065,11 @@ void ChatForm::AddChatMessage(const std::wstring& sender, const std::wstring& me
 
     // Set colors based on sender using packed format for efficiency
     if (sender == L"System" || sender == L"SYSTEM") {
-        chatMsg.packedColors = PACK_COLORS(RGB(255, 100, 100), RGB(255, 150, 150));  // Red for system messages
+        chatMsg.packedColors = PACK_COLORS(SoldatoColors::SENDER_SYSTEM, SoldatoColors::TEXT_SYSTEM);
     } else if (sender == L"You") {
-        chatMsg.packedColors = PACK_COLORS(RGB(100, 150, 255), RGB(150, 200, 255));  // Blue for own messages
+        chatMsg.packedColors = PACK_COLORS(SoldatoColors::SENDER_OWN, SoldatoColors::TEXT_OWN);
     } else {
-        chatMsg.packedColors = PACK_COLORS(RGB(255, 255, 0), RGB(0, 255, 0));        // Yellow/Green for other users
+        chatMsg.packedColors = PACK_COLORS(SoldatoColors::SENDER_OTHER, SoldatoColors::TEXT_OTHER);
     }
 
     // Add to our message deque
@@ -1131,16 +1158,10 @@ void ChatForm::SendChatMessage()
         // Add to chat history immediately (optimistic UI update) with message ID
         AddChatMessage(L"You", wMessage, msg.messageId);
 
-        // Send the message as JSON using yyjson
-        std::string jsonString = JsonUtils::SerializeMessage(msg);
-
+        // Send the Message object directly (no serialization/deserialization cycle)
         DEBUG_LOG("ChatForm: Calling SendMessageAsync...");
-        m_networkManager->SendMessageAsync(jsonString);
+        m_networkManager->SendMessageAsync(msg);
         DEBUG_LOG("ChatForm: SendMessageAsync completed");
-
-        // Note: The NetworkManager will create a wrapper message with a new ID
-        // We need to track the actual message ID that gets sent over the network
-        // This will be handled by the NetworkManager's callback
 
         SetWindowTextW(m_hMessageInput, L"");
         SetFocus(m_hMessageInput);
@@ -1254,15 +1275,24 @@ void ChatForm::UpdateConnectionUI()
             SendMessage(m_hSendButton, BM_SETSTYLE, BS_PUSHBUTTON | BS_DEFPUSHBUTTON, TRUE);
             DEBUG_LOG("ChatForm: Send button set as default after connection");
         }
+
+        // Invalidate window to update connection status indicator
+        if (m_hWnd) {
+            InvalidateRect(m_hWnd, nullptr, FALSE);
+        }
     }
 }
 
 void ChatForm::EnableDisconnectControls(bool enable)
 {
-    // Enable/disable disconnect menu item
+    // Enable/disable menu items based on connection state
     HMENU hMenu = GetMenu(m_hWnd);
     if (hMenu)
     {
+        // When connected: disable connect, enable disconnect
+        // When disconnected: enable connect, disable disconnect
+        EnableMenuItem(hMenu, IDM_CONNECT,
+                      enable ? MF_GRAYED : MF_ENABLED);
         EnableMenuItem(hMenu, IDM_DISCONNECT,
                       enable ? MF_ENABLED : MF_GRAYED);
         DrawMenuBar(m_hWnd);
@@ -1277,15 +1307,15 @@ HWND ChatForm::GetConnectDialogHandle() const
     return nullptr;
 }
 
-
-
-
-
-
-// About dialog procedure
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
     UNREFERENCED_PARAMETER(lParam);
+
+    static std::unique_ptr<GameOfLife> s_gol;
+    static HWND s_hCanvas = nullptr;
+    static SIZE s_lastCanvas = { 0, 0 };
+    static HBRUSH s_hGoLCellBrush = nullptr;
+    static HBRUSH s_hGoLBackgroundBrush = nullptr;
 
     switch (message)
     {
@@ -1299,12 +1329,85 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
                 + L"Build " + std::to_wstring(SOLDATO_VERSION_BUILD);
 
             SetDlgItemTextW(hDlg, IDC_VERSION_TEXT, versionText.c_str());
+
+            // Initialize Game of Life
+            s_gol = std::make_unique<GameOfLife>();
+            s_hCanvas = GetDlgItem(hDlg, IDC_GOL_CANVAS);
+
+            if (s_hCanvas) {
+                // Ensure canvas is at the bottom of Z-order so labels/buttons draw on top
+                SetWindowPos(s_hCanvas, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+
+                RECT rc{};
+                GetClientRect(s_hCanvas, &rc);
+                s_lastCanvas.cx = rc.right - rc.left;
+                s_lastCanvas.cy = rc.bottom - rc.top;
+                s_gol->Resize(s_lastCanvas.cx, s_lastCanvas.cy, GOL_MIN_CELL_SIZE);
+            }
+
+            // Create reusable brushes for GoL drawing
+            if (!s_hGoLCellBrush) s_hGoLCellBrush = CreateSolidBrush(SoldatoColors::NEON_GREEN);
+            if (!s_hGoLBackgroundBrush) s_hGoLBackgroundBrush = CreateSolidBrush(SoldatoColors::BACKGROUND_MAIN);
+
+            // Start animation timer
+            SetTimer(hDlg, GOL_TIMER_ID, GOL_TIMER_RATE, nullptr);
         }
         return (INT_PTR)TRUE;
+
+    case WM_TIMER:
+        if (wParam == GOL_TIMER_ID) {
+            if (s_gol) {
+                s_gol->update();
+                if (s_hCanvas) InvalidateRect(s_hCanvas, nullptr, FALSE);
+            }
+            return (INT_PTR)TRUE;
+        }
+        break;
+
+    case WM_DRAWITEM:
+        {
+            DRAWITEMSTRUCT* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+            if (dis && dis->CtlID == IDC_GOL_CANVAS) {
+                int w = dis->rcItem.right - dis->rcItem.left;
+                int h = dis->rcItem.bottom - dis->rcItem.top;
+                if (!s_gol) {
+                    s_gol = std::make_unique<GameOfLife>();
+                }
+                if (w != s_lastCanvas.cx || h != s_lastCanvas.cy) {
+                    s_lastCanvas.cx = w;
+                    s_lastCanvas.cy = h;
+                    s_gol->Resize(w, h, GOL_MIN_CELL_SIZE);
+                }
+                s_gol->draw(dis->hDC, 0, 0, s_hGoLCellBrush, s_hGoLBackgroundBrush);
+                return (INT_PTR)TRUE;
+            }
+        }
+        break;
+
+    case WM_CTLCOLORSTATIC:
+        {
+            HDC hdc = (HDC)wParam;
+            HWND hCtl = (HWND)lParam;
+            UINT id = GetDlgCtrlID(hCtl);
+            if (hCtl && id != IDC_GOL_CANVAS) {
+                SetBkMode(hdc, TRANSPARENT);
+                if (id == IDC_VERSION_TEXT || id == IDC_GITHUB_LABEL) {
+                    SetTextColor(hdc, RGB(0, 0, 0));
+                } else {
+                    SetTextColor(hdc, SoldatoColors::NEON_GREEN);
+                }
+                return (INT_PTR)GetStockObject(HOLLOW_BRUSH);
+            }
+        }
+        break;
 
     case WM_COMMAND:
         if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
         {
+            KillTimer(hDlg, GOL_TIMER_ID);
+            s_gol.reset();
+            if (s_hGoLCellBrush) { DeleteObject(s_hGoLCellBrush); s_hGoLCellBrush = nullptr; }
+            if (s_hGoLBackgroundBrush) { DeleteObject(s_hGoLBackgroundBrush); s_hGoLBackgroundBrush = nullptr; }
             EndDialog(hDlg, LOWORD(wParam));
             return (INT_PTR)TRUE;
         }
@@ -1440,6 +1543,8 @@ void ChatForm::OnDrawItem(DRAWITEMSTRUCT* pDrawItem)
     RECT memRect = pDrawItem->rcItem;
     OffsetRect(&memRect, -pDrawItem->rcItem.left, -pDrawItem->rcItem.top);
 
+    FillRect(memDC, &memRect, m_hGrayBgBrush);
+
     // Draw to memory DC
     DrawMessageBackground(memDC, memRect, message);
     DrawAckIndicator(memDC, memRect, message);
@@ -1487,12 +1592,15 @@ void ChatForm::DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessag
     FillRect(hdc, &rect, hBrushToUse);
 
     // Draw subtle border using pre-created pen
+    // Select the brush too so Rectangle() doesn't fill with white
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrushToUse);
     HPEN oldPen = (HPEN)SelectObject(hdc, hPenToUse);
     Rectangle(hdc, rect.left, rect.top, rect.right, rect.bottom);
     SelectObject(hdc, oldPen);
+    SelectObject(hdc, oldBrush);
 }
 
-void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& message)
+void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& message) const
 {
     if (!message.isOwnMessage) return; // Only show indicators for own messages
 
@@ -1523,23 +1631,23 @@ void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& me
         case MessageStatus::TimedOut:
             hBrushToUse = m_hTimeoutIndicatorBrush;
             hPenToUse = m_hTimeoutIndicatorBorderPen;
-            textColor = RGB(255, 255, 255);  // White text for better contrast on red
+            textColor = SoldatoColors::INDICATOR_TEXT_TIMEOUT;
             break;
         case MessageStatus::NegativelyAcknowledged:
             hBrushToUse = m_hNackIndicatorBrush;
             hPenToUse = m_hNackIndicatorBorderPen;
-            textColor = RGB(0, 0, 0);  // Black text for contrast on light red
+            textColor = SoldatoColors::INDICATOR_TEXT_STANDARD;
             break;
         case MessageStatus::Acknowledged:
             hBrushToUse = m_hAckIndicatorBrush;
             hPenToUse = m_hAckIndicatorBorderPen;
-            textColor = RGB(0, 0, 0);  // Black text for contrast on green
+            textColor = SoldatoColors::INDICATOR_TEXT_STANDARD;
             break;
         case MessageStatus::Pending:
         default:
             hBrushToUse = m_hPendingIndicatorBrush;
             hPenToUse = m_hPendingIndicatorBorderPen;
-            textColor = RGB(0, 0, 0);  // Black text for contrast on yellow
+            textColor = SoldatoColors::INDICATOR_TEXT_STANDARD;
             break;
     }
 
@@ -1564,7 +1672,7 @@ void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& me
 
 void ChatForm::DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& message)
 {
-    // Set up for drawing text
+    // Set up for drawing text - use TRANSPARENT mode so the background shows through
     SetBkMode(hdc, TRANSPARENT);
 
     // Draw the sender's name in its color
@@ -1598,10 +1706,8 @@ void ChatForm::UpdateMessageAckStatus(const std::string& messageId)
                     auto ackParties = networkTracker->getAcknowledgingParties(messageId);
                     msg.acknowledgingParties = ackParties;
                     msg.hasAck = networkTracker->hasAcknowledgment(messageId);
+                    msg.hasNack = networkTracker->hasNegativeAcknowledgment(messageId);
                 }
-
-                // Check for NACK (this would need to be implemented in MessageTracker)
-                // For now, we'll assume no NACK unless explicitly set
             }
             break;
         }

@@ -13,7 +13,6 @@ public:
         WSADATA wsaData;
         int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
         if (result != 0) {
-            // Throw an exception with detailed error information
             std::string errorMsg = "WSAStartup failed with error code: " + std::to_string(result);
             throw std::runtime_error(errorMsg);
         } else {

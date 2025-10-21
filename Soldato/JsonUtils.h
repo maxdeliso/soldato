@@ -7,14 +7,9 @@
 #include <vector>
 #include <optional>
 
-/**
- * Utility class for JSON serialization/deserialization using yyjson
- * Replaces nlohmann::json for better performance and smaller binary size
- */
 class JsonUtils {
 public:
 
-    // yyjson-based serialization and deserialization functions
     /**
      * Serialize a Message object to JSON string using yyjson
      * This replaces the nlohmann::json to_json function

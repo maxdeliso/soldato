@@ -1,5 +1,6 @@
 #include "framework.h"
 #include "MessageTracker.h"
+#include "ChatForm.h"
 #include "DebugUtils.h"
 #include <algorithm>
 
@@ -9,7 +10,8 @@ MessageTracker::MessageTracker()
 
 MessageTracker::MessageTracker(const std::string& instanceId)
     : m_instanceId(instanceId)
-    , m_cleanupRunning(true) {
+    , m_cleanupRunning(true)
+    , m_hNotifyWnd(NULL) {
 
     // Start cleanup thread
     m_cleanupThread = std::thread(&MessageTracker::cleanupThreadFunction, this);
@@ -107,6 +109,40 @@ bool MessageTracker::hasAcknowledgment(const std::string& messageId) const {
     return !it->second->acknowledgments.empty();
 }
 
+bool MessageTracker::hasNegativeAcknowledgment(const std::string& messageId) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto it = m_messageMap.find(messageId);
+    if (it == m_messageMap.end()) {
+        return false;
+    }
+
+    // Check if any acknowledgment is a NACK
+    for (const auto& pair : it->second->acknowledgments) {
+        if (pair.second.type == MessageType::NACK) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::unordered_set<std::string> MessageTracker::getNegativeAcknowledgingParties(const std::string& messageId) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto it = m_messageMap.find(messageId);
+    if (it == m_messageMap.end()) {
+        return {};
+    }
+
+    std::unordered_set<std::string> parties;
+    for (const auto& pair : it->second->acknowledgments) {
+        if (pair.second.type == MessageType::NACK) {
+            parties.insert(pair.first);
+        }
+    }
+    return parties;
+}
+
 std::unordered_map<std::string, long long> MessageTracker::getDeliveryStats() const {
     std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -129,6 +165,12 @@ void MessageTracker::cleanupTimedOutMessages() {
         if (it->second->timestamp < cutoff) {
             DEBUG_LOG("[MessageTracker] Message timed out: " + it->first);
             m_totalMessagesTimedOut++;
+
+            // Notify the UI thread of the status change
+            if (m_hNotifyWnd) {
+                PostMessage(m_hNotifyWnd, WM_APP_UPDATE_ACK, 0, 0);
+            }
+
             it = m_messageMap.erase(it);
         } else {
             ++it;

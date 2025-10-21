@@ -30,7 +30,7 @@ private:
     mutable std::mutex m_peersMutex;
 
     static LRESULT CALLBACK PeerPanelProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-    LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
+    LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) const;
 
     void InitializeControls();
     void CenterWindow() const;

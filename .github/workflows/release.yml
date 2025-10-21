@@ -11,10 +11,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - platform: x86
-            configuration: Release
-            arch: x86
-            runner: windows-latest
           - platform: x64
             configuration: Release
             arch: x64
@@ -50,8 +46,6 @@ jobs:
         msbuild Soldato.sln `
           /p:Configuration=${{ matrix.configuration }} `
           /p:Platform=${{ matrix.arch }} `
-          /p:PlatformToolset=v143 `
-          /p:WindowsTargetPlatformVersion=10.0 `
           /m `
           /v:minimal
 
@@ -66,14 +60,6 @@ jobs:
           "${{ matrix.arch }}/${{ matrix.configuration }}/Soldato.exe",
           "Soldato/${{ matrix.arch }}/${{ matrix.configuration }}/Soldato.exe"
         )
-
-        # Add Win32 path for x86 builds (solution maps x86 to Win32)
-        if ("${{ matrix.arch }}" -eq "x86") {
-          $possiblePaths += @(
-            "Win32/${{ matrix.configuration }}/Soldato.exe",
-            "Soldato/Win32/${{ matrix.configuration }}/Soldato.exe"
-          )
-        }
 
         $exePath = $null
         foreach ($path in $possiblePaths) {
@@ -138,7 +124,6 @@ jobs:
           ## Soldato ${{ steps.tag.outputs.display_version }}
 
           Multi-architecture release with optimized builds for:
-          - **x86** (32-bit Windows)
           - **x64** (64-bit Windows)
           - **ARM64** (ARM64 Windows)
 
@@ -154,7 +139,6 @@ jobs:
           ### Changes
           See the [changelog](https://github.com/${{ github.repository }}/compare/${{ steps.tag.outputs.display_version }}^...${{ steps.tag.outputs.display_version }}) for detailed changes.
         files: |
-          artifacts/Soldato-x86/Soldato-${{ steps.tag.outputs.display_version }}-x86.zip
           artifacts/Soldato-x64/Soldato-${{ steps.tag.outputs.display_version }}-x64.zip
           artifacts/Soldato-arm64/Soldato-${{ steps.tag.outputs.display_version }}-arm64.zip
         draft: false

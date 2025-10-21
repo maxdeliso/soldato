@@ -5,17 +5,16 @@
 #include "StringUtils.h"
 #include <sstream>
 
-// Control IDs - using enum class for type safety
 enum class ConnectControlId {
     MulticastIP = 2001,
     Port = 2002,
-    Username = 2003,
     ConnectBtn = 2004,
     CancelBtn = 2005
 };
 
 ConnectDialog::ConnectDialog(HWND parent, ConnectSuccessCallback on_success, HINSTANCE hInstance)
-    : m_hParent(parent), m_hWnd(nullptr), m_on_success(on_success), m_hInstance(hInstance)
+    : m_hParent(parent), m_hWnd(nullptr), m_hMulticastIP(nullptr), m_hPort(nullptr),
+      m_hConnectButton(nullptr), m_hCancelButton(nullptr), m_on_success(on_success), m_hInstance(hInstance)
 {
     // Create the dialog window
     m_hWnd = CreateDialogParam(
@@ -97,17 +96,21 @@ void ConnectDialog::InitializeControls()
     // Get control handles
     m_hMulticastIP = GetDlgItem(m_hWnd, static_cast<int>(ConnectControlId::MulticastIP));
     m_hPort = GetDlgItem(m_hWnd, static_cast<int>(ConnectControlId::Port));
-    m_hUsername = GetDlgItem(m_hWnd, static_cast<int>(ConnectControlId::Username));
     m_hConnectButton = GetDlgItem(m_hWnd, static_cast<int>(ConnectControlId::ConnectBtn));
     m_hCancelButton = GetDlgItem(m_hWnd, static_cast<int>(ConnectControlId::CancelBtn));
 
-    // Set default values
-    SetWindowTextW(m_hMulticastIP, L"224.0.0.122");
-    SetWindowTextW(m_hPort, L"1337");
-    SetWindowTextW(m_hUsername, L"User");
+    // Populate the multicast IP dropdown with preset values
+    SendMessageW(m_hMulticastIP, CB_ADDSTRING, 0, (LPARAM)L"FF02::77");      // IPv6 link-local multicast
+    SendMessageW(m_hMulticastIP, CB_ADDSTRING, 0, (LPARAM)L"224.0.0.122");  // IPv4 multicast
 
-    // Set focus to username field
-    SetFocus(m_hUsername);
+    // Set default to IPv6 address (first item)
+    SendMessageW(m_hMulticastIP, CB_SETCURSEL, 0, 0);
+
+    // Set default port
+    SetWindowTextW(m_hPort, L"1337");
+
+    // Set focus to multicast IP field
+    SetFocus(m_hMulticastIP);
 }
 
 void ConnectDialog::OnConnect()
@@ -115,14 +118,12 @@ void ConnectDialog::OnConnect()
     // Get values from controls
     wchar_t multicastIP[256];
     wchar_t port[32];
-    wchar_t username[256];
 
     GetWindowTextW(m_hMulticastIP, multicastIP, 256);
     GetWindowTextW(m_hPort, port, 32);
-    GetWindowTextW(m_hUsername, username, 256);
 
     // Validate inputs
-    if (wcslen(multicastIP) == 0 || wcslen(port) == 0 || wcslen(username) == 0)
+    if (wcslen(multicastIP) == 0 || wcslen(port) == 0)
     {
         MessageBoxW(m_hWnd, L"Please fill in all fields.", L"Error", MB_OK | MB_ICONERROR);
         return;
@@ -131,11 +132,9 @@ void ConnectDialog::OnConnect()
     // Convert to strings
     std::wstring wMulticastIP(multicastIP);
     std::wstring wPort(port);
-    std::wstring wUsername(username);
 
     // Convert to narrow strings using proper UTF-8 conversion
     std::string multicastIPStr = StringUtils::to_string(wMulticastIP);
-    std::string usernameStr = StringUtils::to_string(wUsername);
 
     // Convert port to integer
     int portNum = _wtoi(port);
@@ -148,7 +147,7 @@ void ConnectDialog::OnConnect()
     // Call the network manager to connect
     NetworkManager& networkManager = NetworkManager::GetInstance();
     {
-        bool success = networkManager.Connect(multicastIPStr, portNum, usernameStr);
+        bool success = networkManager.Connect(multicastIPStr, portNum);
         if (success)
         {
             Hide();
@@ -227,12 +226,4 @@ int ConnectDialog::GetPort() const
     wchar_t buffer[32];
     GetWindowTextW(m_hPort, buffer, 32);
     return _wtoi(buffer);
-}
-
-std::string ConnectDialog::GetUsername() const
-{
-    wchar_t buffer[256];
-    GetWindowTextW(m_hUsername, buffer, 256);
-    std::wstring wstr(buffer);
-    return StringUtils::to_string(wstr);
 }

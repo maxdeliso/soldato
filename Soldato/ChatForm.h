@@ -99,6 +99,8 @@ private:
     HPEN m_hTimeoutIndicatorBorderPen; // Red indicator border pen
     HPEN m_hNackIndicatorBorderPen; // Light red indicator border pen
     HPEN m_hPendingIndicatorBorderPen; // Yellow indicator border pen
+    HBRUSH m_hGrayBgBrush;          // Gunmetal gray for ListBox/Input background
+    HPEN m_hGrayBorderPen;          // Gunmetal gray border pen
 
     // Optimized ACK status checking
     std::unordered_set<std::string> m_pendingMessages; // Only own messages that haven't been ACK'd or timed out
@@ -114,11 +116,9 @@ private:
     LRESULT OnPeersUpdated();
     LRESULT OnSize(WPARAM wParam, LPARAM lParam);
     LRESULT OnPaint();
-    LRESULT OnTimer(WPARAM wParam);
     LRESULT OnKeyDown(WPARAM wParam);
     LRESULT OnMeasureItem(LPARAM lParam);
     LRESULT OnDrawItem(LPARAM lParam);
-
 
     // Helper function to resolve proper module handle
     static HINSTANCE ResolveModuleHandle(HINSTANCE hInstance);
@@ -132,7 +132,6 @@ private:
     void OnAbout() const;
     void OnConnect();
     void OnDisconnect();
-    void OnNetworkMessage(const std::string& sender, const std::string& message);
 
     // GDI object management
     void CreateGDIObjects();
@@ -144,7 +143,7 @@ private:
     void UpdateMessageAckStatus(const std::string& messageId);
     void DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message);
     void DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& message);
-    void DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& message);
+    void DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& message) const;
 
 public:
     void UpdateConnectionUI();

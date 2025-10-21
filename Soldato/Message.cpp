@@ -9,11 +9,19 @@
 // Generate a proper UUID using Windows RPC
 std::string Message::generateUUID() {
     UUID uuid;
-    UuidCreate(&uuid);
+    RPC_STATUS status = UuidCreate(&uuid);
+    if (status != RPC_S_OK && status != RPC_S_UUID_LOCAL_ONLY) {
+        // If UUID creation fails, return a fallback UUID (all zeros)
+        return "00000000-0000-0000-0000-000000000000";
+    }
 
     // Convert UUID to string
-    RPC_CSTR uuidString;
-    UuidToStringA(&uuid, &uuidString);
+    RPC_CSTR uuidString = nullptr;
+    status = UuidToStringA(&uuid, &uuidString);
+    if (status != RPC_S_OK || uuidString == nullptr) {
+        // If conversion fails, return a fallback UUID
+        return "00000000-0000-0000-0000-000000000000";
+    }
 
     std::string result(reinterpret_cast<char*>(uuidString));
     RpcStringFreeA(&uuidString);
@@ -57,6 +65,3 @@ MessageType Message::stringToMessageType(const std::string& typeStr) {
     if (typeStr == "SYSTEM_EVENT") return MessageType::SYSTEM_EVENT;
     return MessageType::CHAT; // Default fallback
 }
-
-// Note: JSON serialization/deserialization functions have been moved to JsonUtils.cpp
-// using yyjson library for better performance

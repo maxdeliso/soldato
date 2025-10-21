@@ -20,7 +20,10 @@ struct PeerInfo {
 
     PeerInfo() = default;
 
-    PeerInfo(const std::string& id, const std::string& ip, std::chrono::steady_clock::time_point seen)
+    PeerInfo(
+      const std::string& id,
+      const std::string& ip,
+      std::chrono::steady_clock::time_point seen)
         : uuid(id), ipAddress(ip), lastSeen(seen) {}
 };
 

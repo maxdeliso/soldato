@@ -84,6 +84,22 @@ public:
     bool hasAcknowledgment(const std::string& messageId) const;
 
     /**
+     * Checks if a message has been negatively acknowledged by any peer.
+     *
+     * @param messageId The ID of the message to check
+     * @return True if the message has been negatively acknowledged by at least one peer
+     */
+    bool hasNegativeAcknowledgment(const std::string& messageId) const;
+
+    /**
+     * Gets the parties that sent negative acknowledgments for a message.
+     *
+     * @param messageId The ID of the message to check
+     * @return The set of sender IDs that have sent NACK for the message
+     */
+    std::unordered_set<std::string> getNegativeAcknowledgingParties(const std::string& messageId) const;
+
+    /**
      * Gets delivery statistics.
      *
      * @return A map of statistic names to their values
@@ -105,6 +121,13 @@ public:
      */
     std::string getInstanceId() const { return m_instanceId; }
 
+    /**
+     * Sets the notification window handle for UI updates.
+     *
+     * @param hWnd The window handle to receive WM_APP_UPDATE_ACK messages
+     */
+    void SetNotificationWindow(HWND hWnd) { m_hNotifyWnd = hWnd; }
+
 private:
     /**
      * Lightweight record class to hold message tracking information.
@@ -116,7 +139,10 @@ private:
         std::chrono::steady_clock::time_point timestamp;
         std::unordered_map<std::string, Message> acknowledgments;
 
-        MessageInfo(const std::string& msgId, const std::string& sender, std::chrono::steady_clock::time_point ts)
+        MessageInfo(
+          const std::string& msgId,
+          const std::string& sender,
+          std::chrono::steady_clock::time_point ts)
             : messageId(msgId), senderId(sender), timestamp(ts) {}
     };
 
@@ -138,6 +164,11 @@ private:
     std::thread m_cleanupThread;
     std::mutex m_cleanupMutex;
     std::condition_variable m_cleanupCondition;
+
+    /**
+     * Notification window handle for UI updates
+     */
+    HWND m_hNotifyWnd;
 
     /**
      * Statistics

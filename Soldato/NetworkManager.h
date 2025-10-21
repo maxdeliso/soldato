@@ -11,13 +11,10 @@
 #include <thread>
 #include <condition_variable>
 #include <functional>
-// Note: json.hpp removed, now using yyjson via JsonUtils
 #include "Message.h"
 #include "MessageTracker.h"
 #include "PeerTracker.h"
 #include "WinsockManager.h"
-
-#pragma comment(lib, "ws2_32.lib")
 
 // Socket event types for callback notifications
 enum class SocketEventType {
@@ -38,12 +35,11 @@ private:
     static WinsockManager s_winsockManager;
 
     SOCKET m_socket;
-    sockaddr_in m_multicastAddr;
+    sockaddr_storage m_multicastAddr;
     std::string m_multicastIP;
     int m_port;
     std::atomic<bool> m_connected;
-    std::string m_username;
-    std::string m_senderId;  // UUID for Teflon compatibility
+    std::string m_senderId;
     std::unique_ptr<MessageTracker> m_messageTracker;  // Message tracking for ACK/NACK
     std::unique_ptr<PeerTracker> m_peerTracker;        // Peer tracking for known peers
 
@@ -63,7 +59,7 @@ private:
     mutable std::mutex m_callbackMutex;
 
     // Message sending queue and worker thread
-    std::queue<std::string> m_sendQueue;
+    std::queue<Message> m_sendQueue;
     std::mutex m_sendQueueMutex;
     std::condition_variable m_sendQueueCondition;
     std::thread m_sendWorkerThread;
@@ -82,10 +78,10 @@ private:
 public:
     static NetworkManager& GetInstance();
 
-    bool Connect(const std::string& multicastIP, int port, const std::string& username);
+    bool Connect(const std::string& multicastIP, int port);
     void Disconnect();
-    bool SendMessage(const std::string& message);
-    void SendMessageAsync(const std::string& message);
+    bool SendMessage(const Message& message);
+    void SendMessageAsync(const Message& message);
     bool IsConnected() const { return m_connected.load(); }
 
     // Teflon-compatible message helpers
@@ -103,10 +99,6 @@ public:
     std::unordered_map<std::string, PeerInfo> GetKnownPeers() const;
     int GetPeerCount() const;
 
-    std::string GetUsername() const {
-        std::lock_guard<std::mutex> lock(m_memberMutex);
-        return m_username;
-    }
     std::string GetMulticastIP() const {
         std::lock_guard<std::mutex> lock(m_memberMutex);
         return m_multicastIP;

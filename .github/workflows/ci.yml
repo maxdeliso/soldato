@@ -23,10 +23,6 @@ jobs:
           - configuration: Release
             platform: x64
           - configuration: Debug
-            platform: x86
-          - configuration: Release
-            platform: x86
-          - configuration: Debug
             platform: arm64
           - configuration: Release
             platform: arm64
@@ -70,8 +66,6 @@ jobs:
         msbuild $env:SOLUTION_FILE `
           /p:Configuration=${{ matrix.configuration }} `
           /p:Platform=${{ matrix.platform }} `
-          /p:PlatformToolset=v143 `
-          /p:WindowsTargetPlatformVersion=10.0 `
           /p:UseMultiToolTask=true `
           /p:EnforceProcessCountAcrossBuilds=true `
           /m `
@@ -93,10 +87,8 @@ jobs:
           "${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe",
           "Soldato/${{ matrix.platform }}/${{ matrix.configuration }}/Soldato.exe",
           "x64/${{ matrix.configuration }}/Soldato.exe",
-          "x86/${{ matrix.configuration }}/Soldato.exe",
           "arm64/${{ matrix.configuration }}/Soldato.exe",
-          "ARM64/${{ matrix.configuration }}/Soldato.exe",
-          "Win32/${{ matrix.configuration }}/Soldato.exe"
+          "ARM64/${{ matrix.configuration }}/Soldato.exe"
         )
 
         $exePath = $null
@@ -155,45 +147,3 @@ jobs:
           ARM64/${{ matrix.configuration }}/Soldato.pdb
         retention-days: 30
         if-no-files-found: warn
-
-  # Optional: Add a job for static analysis
-  static-analysis:
-    runs-on: windows-latest
-    needs: build
-    if: github.event_name == 'pull_request'
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup MSVC
-      uses: microsoft/setup-msbuild@v2
-
-    - name: Run static analysis
-      run: |
-        # Enable additional warnings and static analysis
-        msbuild $env:PROJECT_FILE `
-          /p:Configuration=Release `
-          /p:Platform=x64 `
-          /p:PlatformToolset=v143 `
-          /p:WindowsTargetPlatformVersion=10.0 `
-          /p:RunCodeAnalysis=true `
-          /p:CodeAnalysisRuleSet=MinimumRecommendedRules.ruleset `
-          /p:EnablePREfast=true `
-          /p:CodeAnalysisTreatWarningsAsErrors=false `
-          /p:CodeAnalysisVerboseOutput=true `
-          /p:CodeAnalysisLogFile=CodeAnalysisLog.xml `
-          /verbosity:minimal `
-          "/flp:logfile=static-analysis.log;verbosity=minimal"
-      continue-on-error: true
-
-    - name: Upload analysis results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: static-analysis-results
-        path: |
-          **/Soldato.exe.CodeAnalysisLog.xml
-          **/CodeAnalysisLog.xml
-          **/static-analysis.log
-        retention-days: 7

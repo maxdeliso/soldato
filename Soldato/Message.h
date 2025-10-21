@@ -61,5 +61,3 @@ struct Message {
     // Convert string to MessageType enum from JSON
     static MessageType stringToMessageType(const std::string& typeStr);
 };
-
-// JSON serialization functions are now in JsonUtils.cpp using yyjson

@@ -3,7 +3,6 @@
 #include <string>
 #include <windows.h>
 
-// Utility functions for proper UTF-8 string conversion
 namespace StringUtils {
 
     // Optimized version: pre-allocate based on UTF-8->UTF-16 conversion rule

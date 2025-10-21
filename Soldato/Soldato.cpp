@@ -1,9 +1,7 @@
-// Soldato.cpp : Defines the entry point for the application.
-//
-
 #include "framework.h"
 #include "Soldato.h"
 #include "WinsockManager.h"
+#include "DebugUtils.h"
 #include <mutex>
 #include <memory>
 
@@ -16,44 +14,32 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(lpCmdLine);
     UNREFERENCED_PARAMETER(nCmdShow);
 
-    // Load Rich Edit library for syntax highlighting
-    LoadLibrary(L"riched32.dll");
-
-    // Create the chat form directly, passing the CORRECT hInstance
     // Note: Winsock initialization is handled by NetworkManager's static WinsockManager
     std::unique_ptr<ChatForm> g_pChatForm = std::make_unique<ChatForm>(nullptr, hInstance);
 
-    // Show the chat form immediately
     if (g_pChatForm)
     {
-        OutputDebugStringA("Soldato: Showing chat form\n");
+        DEBUG_LOG("Soldato: Showing chat form");
         g_pChatForm->Show();
-        OutputDebugStringA("Soldato: Chat form shown, entering message loop\n");
+        DEBUG_LOG("Soldato: Chat form shown, entering message loop");
     }
 
     MSG msg;
-    OutputDebugStringA("Soldato: About to enter message loop\n");
-
-    // --- START PATCH ---
+    DEBUG_LOG("Soldato: About to enter message loop");
     HWND hConnectDialog = g_pChatForm->GetConnectDialogHandle();
 
     while (GetMessage(&msg, nullptr, 0, 0))
     {
-        // Check if the message is for the modeless connect dialog
         if (hConnectDialog && IsDialogMessage(hConnectDialog, &msg))
         {
-            // If it is, IsDialogMessage already processed it. Continue to the next message.
             continue;
         }
 
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
-    // --- END PATCH ---
 
-    OutputDebugStringA("Soldato: Message loop ended\n");
-
-    // Smart pointer handles cleanup automatically
+    DEBUG_LOG("Soldato: Message loop ended");
     g_pChatForm.reset();
 
     return (int) msg.wParam;

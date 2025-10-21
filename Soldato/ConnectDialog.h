@@ -14,7 +14,6 @@ private:
     HWND m_hParent;
     HWND m_hMulticastIP;
     HWND m_hPort;
-    HWND m_hUsername;
     HWND m_hConnectButton;
     HWND m_hCancelButton;
     ConnectSuccessCallback m_on_success;
@@ -37,6 +36,4 @@ public:
 
     std::string GetMulticastIP() const;
     int GetPort() const;
-    std::string GetUsername() const;
 };
-

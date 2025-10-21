@@ -11,7 +11,7 @@
 
 #define SOLDATO_VERSION_MAJOR 0
 #define SOLDATO_VERSION_MINOR 1
-#define SOLDATO_VERSION_PATCH 0
+#define SOLDATO_VERSION_PATCH 1
 #define SOLDATO_VERSION_BUILD 0
 
 // Build version string macros
