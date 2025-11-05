@@ -1364,6 +1364,42 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
 
+    case WM_GETMINMAXINFO:
+        {
+            MINMAXINFO* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+            // Set minimum dialog size (approximately 260x120 as original)
+            mmi->ptMinTrackSize.x = 260;
+            mmi->ptMinTrackSize.y = 120;
+            return (INT_PTR)TRUE;
+        }
+
+    case WM_SIZE:
+        {
+            // Resize the canvas when the dialog is resized
+            if (s_hCanvas) {
+                RECT clientRect;
+                GetClientRect(hDlg, &clientRect);
+
+                // Canvas starts at y=40, leave some margin at bottom
+                // Maintain 10px margin on left/right, canvas starts at y=40
+                int canvasX = 10;
+                int canvasY = 40;
+                int canvasWidth = (clientRect.right - clientRect.left) - 20; // 10px margin on each side
+                int canvasHeight = (clientRect.bottom - clientRect.top) - 50; // 40px from top + 10px margin at bottom
+
+                // Ensure minimum size
+                if (canvasWidth < 100) canvasWidth = 100;
+                if (canvasHeight < 50) canvasHeight = 50;
+
+                SetWindowPos(s_hCanvas, nullptr, canvasX, canvasY, canvasWidth, canvasHeight,
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+
+                // Invalidate to trigger redraw with new size
+                InvalidateRect(s_hCanvas, nullptr, FALSE);
+            }
+            return (INT_PTR)TRUE;
+        }
+
     case WM_DRAWITEM:
     {
       DRAWITEMSTRUCT* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
