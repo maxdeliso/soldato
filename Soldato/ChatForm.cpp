@@ -1365,24 +1365,33 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
         break;
 
     case WM_DRAWITEM:
-        {
-            DRAWITEMSTRUCT* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
-            if (dis && dis->CtlID == IDC_GOL_CANVAS) {
-                int w = dis->rcItem.right - dis->rcItem.left;
-                int h = dis->rcItem.bottom - dis->rcItem.top;
-                if (!s_gol) {
-                    s_gol = std::make_unique<GameOfLife>();
-                }
-                if (w != s_lastCanvas.cx || h != s_lastCanvas.cy) {
-                    s_lastCanvas.cx = w;
-                    s_lastCanvas.cy = h;
-                    s_gol->Resize(w, h, GOL_MIN_CELL_SIZE);
-                }
-                s_gol->draw(dis->hDC, 0, 0, s_hGoLCellBrush, s_hGoLBackgroundBrush);
-                return (INT_PTR)TRUE;
-            }
+    {
+      DRAWITEMSTRUCT* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+      if (dis && dis->CtlID == IDC_GOL_CANVAS) {
+        int w = dis->rcItem.right - dis->rcItem.left;
+        int h = dis->rcItem.bottom - dis->rcItem.top;
+
+        if (!s_gol) {
+          s_gol = std::make_unique<GameOfLife>();
         }
-        break;
+
+        if (w != s_lastCanvas.cx || h != s_lastCanvas.cy) {
+          s_lastCanvas.cx = w;
+          s_lastCanvas.cy = h;
+          s_gol->Resize(w, h, GOL_MIN_CELL_SIZE);
+        }
+
+        // Define your desired colors here (or use existing COLORREF constants if you have them)
+        static const COLORREF CELL_COLOR = RGB(57, 255, 20); // Neon Green
+        static const COLORREF BG_COLOR = RGB(20, 20, 20);    // Dark Gray/Black
+
+        // Updated call passing raw colors instead of brushes
+        s_gol->draw(dis->hDC, 0, 0, CELL_COLOR, BG_COLOR);
+
+        return (INT_PTR)TRUE;
+      }
+    }
+    break;
 
     case WM_CTLCOLORSTATIC:
         {
@@ -1565,7 +1574,7 @@ void ChatForm::OnDrawItem(DRAWITEMSTRUCT* pDrawItem)
     RestoreDC(hdc, savedDC);
 }
 
-void ChatForm::DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message)
+void ChatForm::DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message) const
 {
     // Choose pre-created brush and pen based on acknowledgment status
     HBRUSH hBrushToUse;

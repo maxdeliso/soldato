@@ -15,8 +15,7 @@ public:
     void Resize(int width, int height, int minCellSize);
     void initializeRandom();
     void update();
-    void draw(HDC hdc, int xOffset, int yOffset, HBRUSH cellBrush, HBRUSH backgroundBrush) const;
-
+    void draw(HDC hdc, int xOffset, int yOffset, COLORREF cellColor, COLORREF bgColor);
     int getCellSize() const { return m_cellSize; }
     int getGridWidth() const { return m_gridWidth; }
     int getGridHeight() const { return m_gridHeight; }

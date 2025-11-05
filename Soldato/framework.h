@@ -20,7 +20,7 @@
 #endif
 
 #ifndef GOL_TIMER_RATE
-#define GOL_TIMER_RATE 100
+#define GOL_TIMER_RATE 0
 #endif
 
 #ifndef GOL_MIN_CELL_SIZE
