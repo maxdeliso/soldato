@@ -1338,6 +1338,27 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
                 // Ensure canvas is at the bottom of Z-order so labels/buttons draw on top
                 SetWindowPos(s_hCanvas, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
+                // Position canvas below GitHub link
+                HWND hGitHubLink = GetDlgItem(hDlg, ID_GITHUB_LINK);
+                int canvasY = 40; // Default fallback
+                if (hGitHubLink) {
+                    RECT linkRect;
+                    GetWindowRect(hGitHubLink, &linkRect);
+                    POINT linkBottom = { linkRect.left, linkRect.bottom };
+                    ScreenToClient(hDlg, &linkBottom);
+                    // Start canvas below the link with a small gap (e.g., 6px)
+                    canvasY = linkBottom.y + 6;
+                }
+
+                RECT clientRect;
+                GetClientRect(hDlg, &clientRect);
+                int canvasX = 10;
+                int canvasWidth = (clientRect.right - clientRect.left) - 20;
+                int canvasHeight = (clientRect.bottom - clientRect.top) - canvasY - 10;
+
+                SetWindowPos(s_hCanvas, nullptr, canvasX, canvasY, canvasWidth, canvasHeight,
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+
                 RECT rc{};
                 GetClientRect(s_hCanvas, &rc);
                 s_lastCanvas.cx = rc.right - rc.left;
@@ -1380,12 +1401,22 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
                 RECT clientRect;
                 GetClientRect(hDlg, &clientRect);
 
-                // Canvas starts at y=40, leave some margin at bottom
-                // Maintain 10px margin on left/right, canvas starts at y=40
+                // Get GitHub link button position to position canvas below it
+                HWND hGitHubLink = GetDlgItem(hDlg, ID_GITHUB_LINK);
+                int canvasY = 40; // Default fallback
+                if (hGitHubLink) {
+                    RECT linkRect;
+                    GetWindowRect(hGitHubLink, &linkRect);
+                    POINT linkBottom = { linkRect.left, linkRect.bottom };
+                    ScreenToClient(hDlg, &linkBottom);
+                    // Start canvas below the link with a small gap (e.g., 6px)
+                    canvasY = linkBottom.y + 6;
+                }
+
+                // Maintain 10px margin on left/right
                 int canvasX = 10;
-                int canvasY = 40;
                 int canvasWidth = (clientRect.right - clientRect.left) - 20; // 10px margin on each side
-                int canvasHeight = (clientRect.bottom - clientRect.top) - 50; // 40px from top + 10px margin at bottom
+                int canvasHeight = (clientRect.bottom - clientRect.top) - canvasY - 10; // Leave 10px margin at bottom
 
                 // Ensure minimum size
                 if (canvasWidth < 100) canvasWidth = 100;

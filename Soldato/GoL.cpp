@@ -1,5 +1,6 @@
 #include "GoL.h"
 #include "Colors.h"
+#include "framework.h"
 
 #include <algorithm>
 #include <random>
@@ -32,6 +33,8 @@ void GameOfLife::Resize(int width, int height, int minCellSize)
     // Simplified heuristic: aim ~15 cells across min dimension, but respect minCellSize
     int targetCellSize = std::max(1, minEdge / 15);
     int computedCell = std::max(minCellSize, targetCellSize);
+    // Cap cell size at maximum to ensure more cells are displayed on larger canvases
+    computedCell = std::min(computedCell, GOL_MAX_CELL_SIZE);
 
     int newGridWidth = std::max(1, width / computedCell);
     int newGridHeight = std::max(1, height / computedCell);

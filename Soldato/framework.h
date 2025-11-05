@@ -26,3 +26,7 @@
 #ifndef GOL_MIN_CELL_SIZE
 #define GOL_MIN_CELL_SIZE 3
 #endif
+
+#ifndef GOL_MAX_CELL_SIZE
+#define GOL_MAX_CELL_SIZE 8
+#endif
