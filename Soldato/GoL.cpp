@@ -1,10 +1,13 @@
 #include "GoL.h"
 #include "Colors.h"
 
-#include <immintrin.h>
-
 #include <algorithm>
 #include <random>
+
+// Only include intrinsics on supported architectures
+#if defined(_M_X64) || defined(_M_IX86)
+#include <immintrin.h>
+#endif
 
 
 GameOfLife::GameOfLife()
@@ -69,6 +72,7 @@ void GameOfLife::update()
   if (m_gridWidth <= 0 || m_gridHeight <= 0) return;
 
   // --- 1. AVX2 Fast Path for the inner grid ---
+#if defined(_M_X64) || defined(_M_IX86)
   // We only process the "safe" inner rectangle (from r=1 to H-2, c=1 to W-2)
   // to avoid complex SIMD boundary checks for toroidal wrapping.
   if (m_gridWidth >= 34 && m_gridHeight >= 3) {
@@ -136,6 +140,7 @@ void GameOfLife::update()
       }
     }
   }
+#endif
 
   // --- 2. Scalar Fallback for borders and remaining columns ---
   // This ensures full toroidal wrapping still works correctly.
@@ -149,12 +154,14 @@ void GameOfLife::update()
     int rDn = (r + 1) % m_gridHeight;
 
     for (int c = 0; c < m_gridWidth; ++c) {
-      // If we are in the "AVX zone", skip scalar update
+      // If we are in the "AVX zone", skip scalar update (only on x86/x64 where AVX ran)
+#if defined(_M_X64) || defined(_M_IX86)
       if (isMiddleRow && c >= 1 && c <= m_gridWidth - 33) {
         // Fast-forward to the right edge
         c = (m_gridWidth - 33);
         continue;
       }
+#endif
 
       int cLt = (c - 1 + m_gridWidth) % m_gridWidth;
       int cRt = (c + 1) % m_gridWidth;
