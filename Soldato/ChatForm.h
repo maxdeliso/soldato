@@ -141,7 +141,7 @@ private:
     void OnMeasureItem(MEASUREITEMSTRUCT* pMeasureItem);
     void OnDrawItem(DRAWITEMSTRUCT* pDrawItem);
     void UpdateMessageAckStatus(const std::string& messageId);
-    void DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message);
+    void DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message) const;
     void DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& message);
     void DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& message) const;
 

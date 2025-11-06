@@ -1338,6 +1338,27 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
                 // Ensure canvas is at the bottom of Z-order so labels/buttons draw on top
                 SetWindowPos(s_hCanvas, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
+                // Position canvas below GitHub link
+                HWND hGitHubLink = GetDlgItem(hDlg, ID_GITHUB_LINK);
+                int canvasY = 40; // Default fallback
+                if (hGitHubLink) {
+                    RECT linkRect;
+                    GetWindowRect(hGitHubLink, &linkRect);
+                    POINT linkBottom = { linkRect.left, linkRect.bottom };
+                    ScreenToClient(hDlg, &linkBottom);
+                    // Start canvas below the link with a small gap (e.g., 6px)
+                    canvasY = linkBottom.y + 6;
+                }
+
+                RECT clientRect;
+                GetClientRect(hDlg, &clientRect);
+                int canvasX = 10;
+                int canvasWidth = (clientRect.right - clientRect.left) - 20;
+                int canvasHeight = (clientRect.bottom - clientRect.top) - canvasY - 10;
+
+                SetWindowPos(s_hCanvas, nullptr, canvasX, canvasY, canvasWidth, canvasHeight,
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+
                 RECT rc{};
                 GetClientRect(s_hCanvas, &rc);
                 s_lastCanvas.cx = rc.right - rc.left;
@@ -1364,25 +1385,80 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
 
-    case WM_DRAWITEM:
+    case WM_GETMINMAXINFO:
         {
-            DRAWITEMSTRUCT* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
-            if (dis && dis->CtlID == IDC_GOL_CANVAS) {
-                int w = dis->rcItem.right - dis->rcItem.left;
-                int h = dis->rcItem.bottom - dis->rcItem.top;
-                if (!s_gol) {
-                    s_gol = std::make_unique<GameOfLife>();
-                }
-                if (w != s_lastCanvas.cx || h != s_lastCanvas.cy) {
-                    s_lastCanvas.cx = w;
-                    s_lastCanvas.cy = h;
-                    s_gol->Resize(w, h, GOL_MIN_CELL_SIZE);
-                }
-                s_gol->draw(dis->hDC, 0, 0, s_hGoLCellBrush, s_hGoLBackgroundBrush);
-                return (INT_PTR)TRUE;
-            }
+            MINMAXINFO* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+            // Set minimum dialog size (approximately 260x120 as original)
+            mmi->ptMinTrackSize.x = 260;
+            mmi->ptMinTrackSize.y = 120;
+            return (INT_PTR)TRUE;
         }
-        break;
+
+    case WM_SIZE:
+        {
+            // Resize the canvas when the dialog is resized
+            if (s_hCanvas) {
+                RECT clientRect;
+                GetClientRect(hDlg, &clientRect);
+
+                // Get GitHub link button position to position canvas below it
+                HWND hGitHubLink = GetDlgItem(hDlg, ID_GITHUB_LINK);
+                int canvasY = 40; // Default fallback
+                if (hGitHubLink) {
+                    RECT linkRect;
+                    GetWindowRect(hGitHubLink, &linkRect);
+                    POINT linkBottom = { linkRect.left, linkRect.bottom };
+                    ScreenToClient(hDlg, &linkBottom);
+                    // Start canvas below the link with a small gap (e.g., 6px)
+                    canvasY = linkBottom.y + 6;
+                }
+
+                // Maintain 10px margin on left/right
+                int canvasX = 10;
+                int canvasWidth = (clientRect.right - clientRect.left) - 20; // 10px margin on each side
+                int canvasHeight = (clientRect.bottom - clientRect.top) - canvasY - 10; // Leave 10px margin at bottom
+
+                // Ensure minimum size
+                if (canvasWidth < 100) canvasWidth = 100;
+                if (canvasHeight < 50) canvasHeight = 50;
+
+                SetWindowPos(s_hCanvas, nullptr, canvasX, canvasY, canvasWidth, canvasHeight,
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+
+                // Invalidate to trigger redraw with new size
+                InvalidateRect(s_hCanvas, nullptr, FALSE);
+            }
+            return (INT_PTR)TRUE;
+        }
+
+    case WM_DRAWITEM:
+    {
+      DRAWITEMSTRUCT* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+      if (dis && dis->CtlID == IDC_GOL_CANVAS) {
+        int w = dis->rcItem.right - dis->rcItem.left;
+        int h = dis->rcItem.bottom - dis->rcItem.top;
+
+        if (!s_gol) {
+          s_gol = std::make_unique<GameOfLife>();
+        }
+
+        if (w != s_lastCanvas.cx || h != s_lastCanvas.cy) {
+          s_lastCanvas.cx = w;
+          s_lastCanvas.cy = h;
+          s_gol->Resize(w, h, GOL_MIN_CELL_SIZE);
+        }
+
+        // Define your desired colors here (or use existing COLORREF constants if you have them)
+        static const COLORREF CELL_COLOR = RGB(57, 255, 20); // Neon Green
+        static const COLORREF BG_COLOR = RGB(20, 20, 20);    // Dark Gray/Black
+
+        // Updated call passing raw colors instead of brushes
+        s_gol->draw(dis->hDC, 0, 0, CELL_COLOR, BG_COLOR);
+
+        return (INT_PTR)TRUE;
+      }
+    }
+    break;
 
     case WM_CTLCOLORSTATIC:
         {
@@ -1565,7 +1641,7 @@ void ChatForm::OnDrawItem(DRAWITEMSTRUCT* pDrawItem)
     RestoreDC(hdc, savedDC);
 }
 
-void ChatForm::DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message)
+void ChatForm::DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message) const
 {
     // Choose pre-created brush and pen based on acknowledgment status
     HBRUSH hBrushToUse;
