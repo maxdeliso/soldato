@@ -28,6 +28,7 @@ std::string JsonUtils::SerializeMessage(const Message& msg) {
     std::string json_string(json_c_str);
 
     // 4. Clean up
+
     free((void *)json_c_str);
     yyjson_mut_doc_free(doc);
 

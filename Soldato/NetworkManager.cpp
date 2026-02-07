@@ -132,216 +132,210 @@ void NetworkManager::CleanupSocketEvents()
 
 bool NetworkManager::Connect(const std::string& multicastIP, int port)
 {
-  // Fail fast if already connected.
-  if (m_connected.load()) {
-    DEBUG_LOG("Connect() called while already connected. Ignoring.");
-    return false;
-  }
+    // Fail fast if already connected.
+    if (m_connected.load()) {
+        DEBUG_LOG("Connect() called while already connected. Ignoring.");
+        return false;
+    }
 
-  // Protect member variable access with mutex
-  std::lock_guard<std::mutex> lock(m_memberMutex);
+    // Protect member variable access with mutex
+    std::lock_guard<std::mutex> lock(m_memberMutex);
 
-  m_multicastIP = multicastIP;
-  m_port = port;
-  m_senderId = Message::generateUUID();  // Generate UUID for Teflon compatibility
+    m_multicastIP = multicastIP;
+    m_port = port;
+    m_senderId = Message::generateUUID();  // Generate UUID for Teflon compatibility
 
-  // Initialize message tracker with our sender ID
-  m_messageTracker = std::make_unique<MessageTracker>(m_senderId);
+    // Initialize message tracker with our sender ID
+    m_messageTracker = std::make_unique<MessageTracker>(m_senderId);
 
-  // Set the notification window for the message tracker
-  if (m_messageTracker && m_hNotifyWnd) {
-    m_messageTracker->SetNotificationWindow(m_hNotifyWnd);
-  }
+    // Set the notification window for the message tracker
+    if (m_messageTracker && m_hNotifyWnd) {
+        m_messageTracker->SetNotificationWindow(m_hNotifyWnd);
+    }
 
-  // Initialize peer tracker with our sender ID
-  m_peerTracker = std::make_unique<PeerTracker>(m_senderId);
+    // Initialize peer tracker with our sender ID
+    m_peerTracker = std::make_unique<PeerTracker>(m_senderId);
 
-  // Setup socket events
-  if (!SetupSocketEvents())
-  {
-    return false;
-  }
-
-  // Create a dual-stack UDP socket
-  m_socket = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
-  if (m_socket == INVALID_SOCKET)
-  {
-    LogWinsockError("socket()");
-    CleanupSocketEvents();
-    return false;
-  }
-
-  // Disable IPv6-only mode to enable dual-stack (support both IPv4 and IPv6)
-  int no = 0;
-  if (setsockopt(m_socket, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&no, sizeof(no)) == SOCKET_ERROR)
-  {
-    LogWinsockError("setsockopt(IPV6_V6ONLY)");
-    closesocket(m_socket);
-    m_socket = INVALID_SOCKET;
-    CleanupSocketEvents();
-    return false;
-  }
-
-  // Set socket to allow reuse of address
-  int reuse = 1;
-  if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR)
-  {
-    LogWinsockError("setsockopt(SO_REUSEADDR)");
-    closesocket(m_socket);
-    m_socket = INVALID_SOCKET;
-    CleanupSocketEvents();
-    return false;
-  }
-
-  // Bind to local address
-  sockaddr_in6 localAddr = {};
-  localAddr.sin6_family = AF_INET6;
-  localAddr.sin6_addr = in6addr_any; // The IPv6 equivalent of INADDR_ANY
-  localAddr.sin6_port = htons(static_cast<u_short>(port));
-
-  if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
-  {
-    LogWinsockError("bind()");
-    closesocket(m_socket);
-    m_socket = INVALID_SOCKET;
-    CleanupSocketEvents();
-    return false;
-  }
-
-  // Set up multicast address - detect IPv4 vs IPv6
-  memset(&m_multicastAddr, 0, sizeof(m_multicastAddr));
-
-  // Try to parse as IPv6 first
-  struct in6_addr testV6;
-  if (inet_pton(AF_INET6, multicastIP.c_str(), &testV6) == 1)
-  {
-    // It's an IPv6 address
-    sockaddr_in6* multicastAddrV6 = (sockaddr_in6*)&m_multicastAddr;
-    multicastAddrV6->sin6_family = AF_INET6;
-    multicastAddrV6->sin6_port = htons(static_cast<u_short>(port));
-    multicastAddrV6->sin6_addr = testV6;
-
-    // Join IPv6 multicast group
-    ipv6_mreq multicastRequest = {};
-    multicastRequest.ipv6mr_multiaddr = testV6;
-    multicastRequest.ipv6mr_interface = 0; // Default interface
-
-    if (setsockopt(m_socket, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
+    // Setup socket events
+    if (!SetupSocketEvents())
     {
-      LogWinsockError("setsockopt(IPV6_ADD_MEMBERSHIP)");
-      closesocket(m_socket);
-      m_socket = INVALID_SOCKET;
-      CleanupSocketEvents();
-      return false;
+        return false;
     }
-  }
-  else
-  {
-    // Try IPv4
-    sockaddr_in* multicastAddrV4 = (sockaddr_in*)&m_multicastAddr;
-    multicastAddrV4->sin_family = AF_INET;
-    multicastAddrV4->sin_port = htons(static_cast<u_short>(port));
 
-    if (inet_pton(AF_INET, multicastIP.c_str(), &multicastAddrV4->sin_addr) != 1)
+    // Set up multicast address - detect IPv4 vs IPv6
+    memset(&m_multicastAddr, 0, sizeof(m_multicastAddr));
+
+    struct in6_addr testV6;
+    if (inet_pton(AF_INET6, multicastIP.c_str(), &testV6) == 1)
     {
-      DEBUG_LOG("Invalid multicast IP address format");
-      closesocket(m_socket);
-      m_socket = INVALID_SOCKET;
-      CleanupSocketEvents();
-      return false;
+        // IPv6 path
+        m_socket = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+        if (m_socket == INVALID_SOCKET)
+        {
+            LogWinsockError("socket()");
+            CleanupSocketEvents();
+            return false;
+        }
+
+        int no = 0; // for dual-stack
+        if (setsockopt(m_socket, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&no, sizeof(no)) == SOCKET_ERROR)
+        {
+            LogWinsockError("setsockopt(IPV6_V6ONLY)");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
+
+        int reuse = 1;
+        if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR)
+        {
+            LogWinsockError("setsockopt(SO_REUSEADDR)");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
+
+        sockaddr_in6 localAddr = {};
+        localAddr.sin6_family = AF_INET6;
+        localAddr.sin6_addr = in6addr_any;
+        localAddr.sin6_port = htons(static_cast<u_short>(port));
+        if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
+        {
+            LogWinsockError("bind()");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
+
+        sockaddr_in6* multicastAddrV6 = (sockaddr_in6*)&m_multicastAddr;
+        multicastAddrV6->sin6_family = AF_INET6;
+        multicastAddrV6->sin6_port = htons(static_cast<u_short>(port));
+        multicastAddrV6->sin6_addr = testV6;
+
+        ipv6_mreq multicastRequest = {};
+        multicastRequest.ipv6mr_multiaddr = testV6;
+        multicastRequest.ipv6mr_interface = 0;
+
+        if (setsockopt(m_socket, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
+        {
+            LogWinsockError("setsockopt(IPV6_ADD_MEMBERSHIP)");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
     }
-
-    // Join IPv4 multicast group
-    ip_mreq multicastRequest = {};
-    multicastRequest.imr_multiaddr = multicastAddrV4->sin_addr;
-    multicastRequest.imr_interface.s_addr = INADDR_ANY;
-
-    if (setsockopt(m_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
+    else
     {
-      LogWinsockError("setsockopt(IP_ADD_MEMBERSHIP)");
-      closesocket(m_socket);
-      m_socket = INVALID_SOCKET;
-      CleanupSocketEvents();
-      return false;
+        // IPv4 path
+        m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (m_socket == INVALID_SOCKET)
+        {
+            LogWinsockError("socket()");
+            CleanupSocketEvents();
+            return false;
+        }
+
+        int reuse = 1;
+        if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR)
+        {
+            LogWinsockError("setsockopt(SO_REUSEADDR)");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
+
+        sockaddr_in localAddr = {};
+        localAddr.sin_family = AF_INET;
+        localAddr.sin_addr.s_addr = INADDR_ANY;
+        localAddr.sin_port = htons(static_cast<u_short>(port));
+        if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
+        {
+            LogWinsockError("bind()");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
+
+        sockaddr_in* multicastAddrV4 = (sockaddr_in*)&m_multicastAddr;
+        multicastAddrV4->sin_family = AF_INET;
+        multicastAddrV4->sin_port = htons(static_cast<u_short>(port));
+
+        if (inet_pton(AF_INET, multicastIP.c_str(), &multicastAddrV4->sin_addr) != 1)
+        {
+            DEBUG_LOG("Invalid multicast IP address format");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
+
+        ip_mreq multicastRequest = {};
+        multicastRequest.imr_multiaddr = multicastAddrV4->sin_addr;
+        multicastRequest.imr_interface.s_addr = INADDR_ANY;
+
+        if (setsockopt(m_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
+        {
+            LogWinsockError("setsockopt(IP_ADD_MEMBERSHIP)");
+            closesocket(m_socket);
+            m_socket = INVALID_SOCKET;
+            CleanupSocketEvents();
+            return false;
+        }
     }
-  }
 
-  // Associate socket with event object for read events
-  if (WSAEventSelect(m_socket, m_socketEvent, FD_READ) == SOCKET_ERROR)
-  {
-    LogWinsockError("WSAEventSelect()");
-    closesocket(m_socket);
-    m_socket = INVALID_SOCKET;
-    CleanupSocketEvents();
-    return false;
-  }
-
-  m_connected.store(true);
-
-  // Start event monitoring thread
-  m_threadRunning = true;
-
-  // Ensure the old event thread is properly stopped before creating a new one
-  if (m_eventThread.joinable()) {
-    m_threadRunning = false;
-    if (m_shutdownEvent != NULL) {
-      SetEvent(m_shutdownEvent);
+    if (WSAEventSelect(m_socket, m_socketEvent, FD_READ) == SOCKET_ERROR)
+    {
+        LogWinsockError("WSAEventSelect()");
+        closesocket(m_socket);
+        m_socket = INVALID_SOCKET;
+        CleanupSocketEvents();
+        return false;
     }
-    m_eventThread.join();
-  }
 
-  // Reset thread running flag and create new event thread
-  m_threadRunning = true;
-  DEBUG_LOG("Connect: Creating new event thread");
-  m_eventThread = std::thread(&NetworkManager::EventThreadFunction, this);
-  DEBUG_LOG("Connect: Event thread created");
+    m_connected.store(true);
 
-  // Start send worker thread
-  m_sendWorkerRunning = true;
-  DEBUG_LOG("Connect: Set m_sendWorkerRunning = true");
-
-  // Clear any old messages in the send queue
-  {
-    std::lock_guard<std::mutex> sendQueueLock(m_sendQueueMutex);
-    while (!m_sendQueue.empty()) {
-      m_sendQueue.pop();
+    if (m_eventThread.joinable()) {
+        m_threadRunning = false;
+        if (m_shutdownEvent != NULL) {
+            SetEvent(m_shutdownEvent);
+        }
+        m_eventThread.join();
     }
-  }
 
-  // Ensure the old thread is properly cleaned up before creating a new one
-  if (m_sendWorkerThread.joinable()) {
-    m_sendWorkerThread.join();
-  }
+    m_threadRunning = true;
+    m_eventThread = std::thread(&NetworkManager::EventThreadFunction, this);
 
-  m_sendWorkerThread = std::thread(&NetworkManager::SendWorkerThreadFunction, this);
+    if (m_sendWorkerThread.joinable()) {
+        m_sendWorkerRunning = false;
+        m_sendQueueCondition.notify_all();
+        m_sendWorkerThread.join();
+    }
 
-  // Notify connection established
-  SocketEventCallback socketCallback;
-  {
-    std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
-    socketCallback = m_socketEventCallback;
-  }
-  if (socketCallback)
-  {
-    socketCallback(SocketEventType::Connected, "Connected to " + multicastIP + ":" + std::to_string(port));
-  }
+    m_sendWorkerRunning = true;
+    m_sendWorkerThread = std::thread(&NetworkManager::SendWorkerThreadFunction, this);
 
-  // Debug: Add a test message to verify the callback system
-  MessageCallback messageCallback;
-  {
-    std::lock_guard<std::mutex> messageCallbackLock(m_callbackMutex);
-    messageCallback = m_messageCallback;
-  }
-  if (messageCallback)
-  {
-    messageCallback("System", "Network connection established");
-  }
+    SocketEventCallback socketCallback;
+    {
+        std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
+        socketCallback = m_socketEventCallback;
+    }
+    if (socketCallback)
+    {
+        socketCallback(SocketEventType::Connected, "Connected to " + multicastIP + ":" + std::to_string(port));
+    }
 
-  return true;
+    return true;
 }
 
 void NetworkManager::Disconnect()
 {
+  std::lock_guard<std::mutex> lock(m_memberMutex);
   if (m_connected.load())
   {
     // Clear callbacks first to prevent race conditions during shutdown
@@ -352,7 +346,7 @@ void NetworkManager::Disconnect()
 
     // Stop send worker thread
     {
-      std::lock_guard<std::mutex> lock(m_sendQueueMutex);
+      std::lock_guard<std::mutex> sendQueueLock(m_sendQueueMutex);
       m_sendWorkerRunning = false;
       DEBUG_LOG("Disconnect: Set m_sendWorkerRunning = false");
     }
@@ -400,6 +394,7 @@ void NetworkManager::Disconnect()
 
 bool NetworkManager::SendMessage(const Message& message)
 {
+  std::lock_guard<std::mutex> lock(m_memberMutex);
   DEBUG_LOG("SendMessage: Called with message ID: " + message.messageId);
 
   if (!m_connected.load() || m_socket == INVALID_SOCKET)
@@ -424,8 +419,16 @@ bool NetworkManager::SendMessage(const Message& message)
   std::string jsonMessage = JsonUtils::SerializeMessage(teflonMessage);
 
   DEBUG_LOG("SendMessage: Calling sendto with " + std::to_string(jsonMessage.length()) + " bytes");
-  int result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
-    (sockaddr*)&m_multicastAddr, sizeof(m_multicastAddr));
+  int result;
+  if (m_multicastAddr.ss_family == AF_INET) {
+    sockaddr_in addr_v4 = *(sockaddr_in*)&m_multicastAddr;
+    result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
+                    (sockaddr*)&addr_v4, sizeof(addr_v4));
+  } else {
+    sockaddr_in6 addr_v6 = *(sockaddr_in6*)&m_multicastAddr;
+    result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
+                    (sockaddr*)&addr_v6, sizeof(addr_v6));
+  }
 
   if (result != SOCKET_ERROR)
   {
@@ -433,7 +436,7 @@ bool NetworkManager::SendMessage(const Message& message)
     // Notify message sent
     SocketEventCallback socketCallback;
     {
-      std::lock_guard<std::mutex> lock(m_callbackMutex);
+      std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
       socketCallback = m_socketEventCallback;
     }
     if (socketCallback)
