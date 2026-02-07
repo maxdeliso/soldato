@@ -132,205 +132,205 @@ void NetworkManager::CleanupSocketEvents()
 
 bool NetworkManager::Connect(const std::string& multicastIP, int port)
 {
-    // Fail fast if already connected.
-    if (m_connected.load()) {
-        DEBUG_LOG("Connect() called while already connected. Ignoring.");
-        return false;
-    }
+  // Fail fast if already connected.
+  if (m_connected.load()) {
+    DEBUG_LOG("Connect() called while already connected. Ignoring.");
+    return false;
+  }
 
-    // Protect member variable access with mutex
-    std::lock_guard<std::mutex> lock(m_memberMutex);
+  // Protect member variable access with mutex
+  std::lock_guard<std::mutex> lock(m_memberMutex);
 
-    m_multicastIP = multicastIP;
-    m_port = port;
-    m_senderId = Message::generateUUID();  // Generate UUID for Teflon compatibility
+  m_multicastIP = multicastIP;
+  m_port = port;
+  m_senderId = Message::generateUUID();  // Generate UUID for Teflon compatibility
 
-    // Initialize message tracker with our sender ID
-    m_messageTracker = std::make_unique<MessageTracker>(m_senderId);
+  // Initialize message tracker with our sender ID
+  m_messageTracker = std::make_unique<MessageTracker>(m_senderId);
 
-    // Set the notification window for the message tracker
-    if (m_messageTracker && m_hNotifyWnd) {
-        m_messageTracker->SetNotificationWindow(m_hNotifyWnd);
-    }
+  // Set the notification window for the message tracker
+  if (m_messageTracker && m_hNotifyWnd) {
+    m_messageTracker->SetNotificationWindow(m_hNotifyWnd);
+  }
 
-    // Initialize peer tracker with our sender ID
-    m_peerTracker = std::make_unique<PeerTracker>(m_senderId);
+  // Initialize peer tracker with our sender ID
+  m_peerTracker = std::make_unique<PeerTracker>(m_senderId);
 
-    // Setup socket events
-    if (!SetupSocketEvents())
+  // Setup socket events
+  if (!SetupSocketEvents())
+  {
+    return false;
+  }
+
+  // Set up multicast address - detect IPv4 vs IPv6
+  memset(&m_multicastAddr, 0, sizeof(m_multicastAddr));
+
+  struct in6_addr testV6;
+  if (inet_pton(AF_INET6, multicastIP.c_str(), &testV6) == 1)
+  {
+    // IPv6 path
+    m_socket = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    if (m_socket == INVALID_SOCKET)
     {
-        return false;
+      LogWinsockError("socket()");
+      CleanupSocketEvents();
+      return false;
     }
 
-    // Set up multicast address - detect IPv4 vs IPv6
-    memset(&m_multicastAddr, 0, sizeof(m_multicastAddr));
-
-    struct in6_addr testV6;
-    if (inet_pton(AF_INET6, multicastIP.c_str(), &testV6) == 1)
+    int no = 0; // for dual-stack
+    if (setsockopt(m_socket, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&no, sizeof(no)) == SOCKET_ERROR)
     {
-        // IPv6 path
-        m_socket = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
-        if (m_socket == INVALID_SOCKET)
-        {
-            LogWinsockError("socket()");
-            CleanupSocketEvents();
-            return false;
-        }
-
-        int no = 0; // for dual-stack
-        if (setsockopt(m_socket, IPPROTO_IPV6, IPV6_V6ONLY, (char*)&no, sizeof(no)) == SOCKET_ERROR)
-        {
-            LogWinsockError("setsockopt(IPV6_V6ONLY)");
-            closesocket(m_socket);
-            m_socket = INVALID_SOCKET;
-            CleanupSocketEvents();
-            return false;
-        }
-
-        int reuse = 1;
-        if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR)
-        {
-            LogWinsockError("setsockopt(SO_REUSEADDR)");
-            closesocket(m_socket);
-            m_socket = INVALID_SOCKET;
-            CleanupSocketEvents();
-            return false;
-        }
-
-        sockaddr_in6 localAddr = {};
-        localAddr.sin6_family = AF_INET6;
-        localAddr.sin6_addr = in6addr_any;
-        localAddr.sin6_port = htons(static_cast<u_short>(port));
-        if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
-        {
-            LogWinsockError("bind()");
-            closesocket(m_socket);
-            m_socket = INVALID_SOCKET;
-            CleanupSocketEvents();
-            return false;
-        }
-
-        sockaddr_in6* multicastAddrV6 = (sockaddr_in6*)&m_multicastAddr;
-        multicastAddrV6->sin6_family = AF_INET6;
-        multicastAddrV6->sin6_port = htons(static_cast<u_short>(port));
-        multicastAddrV6->sin6_addr = testV6;
-
-        ipv6_mreq multicastRequest = {};
-        multicastRequest.ipv6mr_multiaddr = testV6;
-        multicastRequest.ipv6mr_interface = 0;
-
-        if (setsockopt(m_socket, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
-        {
-            LogWinsockError("setsockopt(IPV6_ADD_MEMBERSHIP)");
-            closesocket(m_socket);
-            m_socket = INVALID_SOCKET;
-            CleanupSocketEvents();
-            return false;
-        }
+      LogWinsockError("setsockopt(IPV6_V6ONLY)");
+      closesocket(m_socket);
+      m_socket = INVALID_SOCKET;
+      CleanupSocketEvents();
+      return false;
     }
-    else
+
+    int reuse = 1;
+    if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR)
     {
-        // IPv4 path
-        m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if (m_socket == INVALID_SOCKET)
-        {
-            LogWinsockError("socket()");
-            CleanupSocketEvents();
-            return false;
-        }
-
-        int reuse = 1;
-        if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR)
-        {
-            LogWinsockError("setsockopt(SO_REUSEADDR)");
-            closesocket(m_socket);
-            m_socket = INVALID_SOCKET;
-            CleanupSocketEvents();
-            return false;
-        }
-
-        sockaddr_in localAddr = {};
-        localAddr.sin_family = AF_INET;
-        localAddr.sin_addr.s_addr = INADDR_ANY;
-        localAddr.sin_port = htons(static_cast<u_short>(port));
-        if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
-        {
-            LogWinsockError("bind()");
-            closesocket(m_socket);
-            m_socket = INVALID_SOCKET;
-            CleanupSocketEvents();
-            return false;
-        }
-
-        sockaddr_in* multicastAddrV4 = (sockaddr_in*)&m_multicastAddr;
-        multicastAddrV4->sin_family = AF_INET;
-        multicastAddrV4->sin_port = htons(static_cast<u_short>(port));
-
-        if (inet_pton(AF_INET, multicastIP.c_str(), &multicastAddrV4->sin_addr) != 1)
-        {
-            DEBUG_LOG("Invalid multicast IP address format");
-            closesocket(m_socket);
-            m_socket = INVALID_SOCKET;
-            CleanupSocketEvents();
-            return false;
-        }
-
-        ip_mreq multicastRequest = {};
-        multicastRequest.imr_multiaddr = multicastAddrV4->sin_addr;
-        multicastRequest.imr_interface.s_addr = INADDR_ANY;
-
-        if (setsockopt(m_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
-        {
-            LogWinsockError("setsockopt(IP_ADD_MEMBERSHIP)");
-            closesocket(m_socket);
-            m_socket = INVALID_SOCKET;
-            CleanupSocketEvents();
-            return false;
-        }
+      LogWinsockError("setsockopt(SO_REUSEADDR)");
+      closesocket(m_socket);
+      m_socket = INVALID_SOCKET;
+      CleanupSocketEvents();
+      return false;
     }
 
-    if (WSAEventSelect(m_socket, m_socketEvent, FD_READ) == SOCKET_ERROR)
+    sockaddr_in6 localAddr = {};
+    localAddr.sin6_family = AF_INET6;
+    localAddr.sin6_addr = in6addr_any;
+    localAddr.sin6_port = htons(static_cast<u_short>(port));
+    if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
     {
-        LogWinsockError("WSAEventSelect()");
-        closesocket(m_socket);
-        m_socket = INVALID_SOCKET;
-        CleanupSocketEvents();
-        return false;
+      LogWinsockError("bind()");
+      closesocket(m_socket);
+      m_socket = INVALID_SOCKET;
+      CleanupSocketEvents();
+      return false;
     }
 
-    m_connected.store(true);
+    sockaddr_in6* multicastAddrV6 = (sockaddr_in6*)&m_multicastAddr;
+    multicastAddrV6->sin6_family = AF_INET6;
+    multicastAddrV6->sin6_port = htons(static_cast<u_short>(port));
+    multicastAddrV6->sin6_addr = testV6;
 
-    if (m_eventThread.joinable()) {
-        m_threadRunning = false;
-        if (m_shutdownEvent != NULL) {
-            SetEvent(m_shutdownEvent);
-        }
-        m_eventThread.join();
-    }
+    ipv6_mreq multicastRequest = {};
+    multicastRequest.ipv6mr_multiaddr = testV6;
+    multicastRequest.ipv6mr_interface = 0;
 
-    m_threadRunning = true;
-    m_eventThread = std::thread(&NetworkManager::EventThreadFunction, this);
-
-    if (m_sendWorkerThread.joinable()) {
-        m_sendWorkerRunning = false;
-        m_sendQueueCondition.notify_all();
-        m_sendWorkerThread.join();
-    }
-
-    m_sendWorkerRunning = true;
-    m_sendWorkerThread = std::thread(&NetworkManager::SendWorkerThreadFunction, this);
-
-    SocketEventCallback socketCallback;
+    if (setsockopt(m_socket, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
     {
-        std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
-        socketCallback = m_socketEventCallback;
+      LogWinsockError("setsockopt(IPV6_ADD_MEMBERSHIP)");
+      closesocket(m_socket);
+      m_socket = INVALID_SOCKET;
+      CleanupSocketEvents();
+      return false;
     }
-    if (socketCallback)
+  }
+  else
+  {
+    // IPv4 path
+    m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (m_socket == INVALID_SOCKET)
     {
-        socketCallback(SocketEventType::Connected, "Connected to " + multicastIP + ":" + std::to_string(port));
+      LogWinsockError("socket()");
+      CleanupSocketEvents();
+      return false;
     }
 
-    return true;
+    int reuse = 1;
+    if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse)) == SOCKET_ERROR)
+    {
+      LogWinsockError("setsockopt(SO_REUSEADDR)");
+      closesocket(m_socket);
+      m_socket = INVALID_SOCKET;
+      CleanupSocketEvents();
+      return false;
+    }
+
+    sockaddr_in localAddr = {};
+    localAddr.sin_family = AF_INET;
+    localAddr.sin_addr.s_addr = INADDR_ANY;
+    localAddr.sin_port = htons(static_cast<u_short>(port));
+    if (bind(m_socket, (sockaddr*)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
+    {
+      LogWinsockError("bind()");
+      closesocket(m_socket);
+      m_socket = INVALID_SOCKET;
+      CleanupSocketEvents();
+      return false;
+    }
+
+    sockaddr_in* multicastAddrV4 = (sockaddr_in*)&m_multicastAddr;
+    multicastAddrV4->sin_family = AF_INET;
+    multicastAddrV4->sin_port = htons(static_cast<u_short>(port));
+
+    if (inet_pton(AF_INET, multicastIP.c_str(), &multicastAddrV4->sin_addr) != 1)
+    {
+      DEBUG_LOG("Invalid multicast IP address format");
+      closesocket(m_socket);
+      m_socket = INVALID_SOCKET;
+      CleanupSocketEvents();
+      return false;
+    }
+
+    ip_mreq multicastRequest = {};
+    multicastRequest.imr_multiaddr = multicastAddrV4->sin_addr;
+    multicastRequest.imr_interface.s_addr = INADDR_ANY;
+
+    if (setsockopt(m_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&multicastRequest, sizeof(multicastRequest)) == SOCKET_ERROR)
+    {
+      LogWinsockError("setsockopt(IP_ADD_MEMBERSHIP)");
+      closesocket(m_socket);
+      m_socket = INVALID_SOCKET;
+      CleanupSocketEvents();
+      return false;
+    }
+  }
+
+  if (WSAEventSelect(m_socket, m_socketEvent, FD_READ) == SOCKET_ERROR)
+  {
+    LogWinsockError("WSAEventSelect()");
+    closesocket(m_socket);
+    m_socket = INVALID_SOCKET;
+    CleanupSocketEvents();
+    return false;
+  }
+
+  m_connected.store(true);
+
+  if (m_eventThread.joinable()) {
+    m_threadRunning = false;
+    if (m_shutdownEvent != NULL) {
+      SetEvent(m_shutdownEvent);
+    }
+    m_eventThread.join();
+  }
+
+  m_threadRunning = true;
+  m_eventThread = std::thread(&NetworkManager::EventThreadFunction, this);
+
+  if (m_sendWorkerThread.joinable()) {
+    m_sendWorkerRunning = false;
+    m_sendQueueCondition.notify_all();
+    m_sendWorkerThread.join();
+  }
+
+  m_sendWorkerRunning = true;
+  m_sendWorkerThread = std::thread(&NetworkManager::SendWorkerThreadFunction, this);
+
+  SocketEventCallback socketCallback;
+  {
+    std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
+    socketCallback = m_socketEventCallback;
+  }
+  if (socketCallback)
+  {
+    socketCallback(SocketEventType::Connected, "Connected to " + multicastIP + ":" + std::to_string(port));
+  }
+
+  return true;
 }
 
 void NetworkManager::Disconnect()
@@ -423,11 +423,12 @@ bool NetworkManager::SendMessage(const Message& message)
   if (m_multicastAddr.ss_family == AF_INET) {
     sockaddr_in addr_v4 = *(sockaddr_in*)&m_multicastAddr;
     result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
-                    (sockaddr*)&addr_v4, sizeof(addr_v4));
-  } else {
+      (sockaddr*)&addr_v4, sizeof(addr_v4));
+  }
+  else {
     sockaddr_in6 addr_v6 = *(sockaddr_in6*)&m_multicastAddr;
     result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
-                    (sockaddr*)&addr_v6, sizeof(addr_v6));
+      (sockaddr*)&addr_v6, sizeof(addr_v6));
   }
 
   if (result != SOCKET_ERROR)
@@ -717,44 +718,44 @@ Message NetworkManager::CreateAcknowledgment(const std::string& sender, const st
 
 void NetworkManager::SendAcknowledgment(const std::string& originalMessageId, bool isPositive, const sockaddr_storage& peerAddr)
 {
-    if (!m_connected.load() || m_socket == INVALID_SOCKET) {
-        return;
+  if (!m_connected.load() || m_socket == INVALID_SOCKET) {
+    return;
+  }
+
+  // Create acknowledgment message
+  Message ackMessage = CreateAcknowledgment(m_senderId, originalMessageId, isPositive);
+
+  // DO NOT track ACK messages - they are responses to other messages and should not be tracked
+  // This prevents ACK feedback loops where ACKs get ACKed
+
+  // Serialize and send
+  std::string jsonMessage = JsonUtils::SerializeMessage(ackMessage);
+
+  // Debug: Log the acknowledgment JSON being sent
+  DEBUG_LOG("SendAcknowledgment: Sending ACK JSON: " + jsonMessage);
+
+  int fromLen;
+  if (peerAddr.ss_family == AF_INET) {
+    fromLen = sizeof(sockaddr_in);
+  }
+  else {
+    fromLen = sizeof(sockaddr_in6);
+  }
+
+  int result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
+    (sockaddr*)&peerAddr, fromLen);
+
+  if (result != SOCKET_ERROR) {
+    std::string ackType = isPositive ? "ACK" : "NACK";
+    SocketEventCallback socketCallback;
+    {
+      std::lock_guard<std::mutex> lock(m_callbackMutex);
+      socketCallback = m_socketEventCallback;
     }
-
-    // Create acknowledgment message
-    Message ackMessage = CreateAcknowledgment(m_senderId, originalMessageId, isPositive);
-
-    // DO NOT track ACK messages - they are responses to other messages and should not be tracked
-    // This prevents ACK feedback loops where ACKs get ACKed
-
-    // Serialize and send
-    std::string jsonMessage = JsonUtils::SerializeMessage(ackMessage);
-
-    // Debug: Log the acknowledgment JSON being sent
-    DEBUG_LOG("SendAcknowledgment: Sending ACK JSON: " + jsonMessage);
-
-    int fromLen;
-    if (peerAddr.ss_family == AF_INET) {
-		fromLen = sizeof(sockaddr_in);
-	}
-    else {
-		fromLen = sizeof(sockaddr_in6);
-	}
-
-    int result = sendto(m_socket, jsonMessage.c_str(), (int)jsonMessage.length(), 0,
-                       (sockaddr*)&peerAddr, fromLen);
-
-    if (result != SOCKET_ERROR) {
-        std::string ackType = isPositive ? "ACK" : "NACK";
-        SocketEventCallback socketCallback;
-        {
-            std::lock_guard<std::mutex> lock(m_callbackMutex);
-            socketCallback = m_socketEventCallback;
-        }
-        if (socketCallback) {
-            socketCallback(SocketEventType::AckSent, "Sent " + ackType + " for message: " + originalMessageId);
-        }
+    if (socketCallback) {
+      socketCallback(SocketEventType::AckSent, "Sent " + ackType + " for message: " + originalMessageId);
     }
+  }
 }
 
 
@@ -789,7 +790,8 @@ void NetworkManager::ProcessIncomingMessage(const Message& message, const sockad
       socketCallback(SocketEventType::MessageReceived, "Teflon " + ackType + " received from " + message.senderId);
     }
     return; // Explicit return to prevent any further processing and ACK feedback loops
-  } else if (message.type == MessageType::CHAT) {
+  }
+  else if (message.type == MessageType::CHAT) {
     // Handle chat message
     if (checksumValid) {
       // Send ACK for valid message
@@ -814,7 +816,8 @@ void NetworkManager::ProcessIncomingMessage(const Message& message, const sockad
       if (socketCallback) {
         socketCallback(SocketEventType::MessageReceived, "Teflon message received from " + message.senderId);
       }
-    } else {
+    }
+    else {
       // Send NACK for invalid message
       SendAcknowledgment(message.messageId, false, fromAddr); // Use the 3-argument version
 

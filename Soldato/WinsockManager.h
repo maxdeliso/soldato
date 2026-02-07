@@ -9,31 +9,32 @@
 
 class WinsockManager {
 public:
-    WinsockManager() {
-        WSADATA wsaData;
-        int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-        if (result != 0) {
-            std::string errorMsg = "WSAStartup failed with error code: " + std::to_string(result);
-            throw std::runtime_error(errorMsg);
-        } else {
-            m_initialized = true;
-        }
+  WinsockManager() {
+    WSADATA wsaData;
+    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (result != 0) {
+      std::string errorMsg = "WSAStartup failed with error code: " + std::to_string(result);
+      throw std::runtime_error(errorMsg);
     }
-
-    ~WinsockManager() {
-        if (m_initialized) {
-            WSACleanup();
-        }
+    else {
+      m_initialized = true;
     }
+  }
 
-    bool IsInitialized() const {
-        return m_initialized;
+  ~WinsockManager() {
+    if (m_initialized) {
+      WSACleanup();
     }
+  }
 
-    // Prevent copying
-    WinsockManager(const WinsockManager&) = delete;
-    WinsockManager& operator=(const WinsockManager&) = delete;
+  bool IsInitialized() const {
+    return m_initialized;
+  }
+
+  // Prevent copying
+  WinsockManager(const WinsockManager&) = delete;
+  WinsockManager& operator=(const WinsockManager&) = delete;
 
 private:
-    bool m_initialized;
+  bool m_initialized;
 };
