@@ -14,50 +14,50 @@
  */
 class PeerPanel {
 private:
-    HWND m_hWnd;
-    HWND m_hPeerList;
-    HWND m_hPeerCountLabel;
-    HWND m_hParent;
-    HFONT m_hFont; // Member variable for the font
-    HBRUSH m_hBkgBrush; // Member variable for the background brush
-    HPEN m_hNeonPen; // Member variable for the neon border pen
-    HINSTANCE m_hInstance;
+  HWND m_hWnd;
+  HWND m_hPeerList;
+  HWND m_hPeerCountLabel;
+  HWND m_hParent;
+  HFONT m_hFont; // Member variable for the font
+  HBRUSH m_hBkgBrush; // Member variable for the background brush
+  HPEN m_hNeonPen; // Member variable for the neon border pen
+  HINSTANCE m_hInstance;
 
-    std::vector<std::wstring> m_peerEntries;
-    std::unordered_map<std::string, PeerInfo> m_currentPeers;
+  std::vector<std::wstring> m_peerEntries;
+  std::unordered_map<std::string, PeerInfo> m_currentPeers;
 
-    // Thread safety
-    mutable std::mutex m_peersMutex;
+  // Thread safety
+  mutable std::mutex m_peersMutex;
 
-    static LRESULT CALLBACK PeerPanelProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-    LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) const;
+  static LRESULT CALLBACK PeerPanelProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+  LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) const;
 
-    void InitializeControls();
-    void CenterWindow() const;
-    void UpdatePeerList();
-    void UpdatePeerCount();
-    void UpdatePeerListInternal();
-    void UpdatePeerCountInternal();
-    std::wstring FormatPeerEntry(const PeerInfo& peer) const;
-    std::wstring FormatTimestamp(const std::chrono::steady_clock::time_point& timestamp) const;
+  void InitializeControls();
+  void CenterWindow() const;
+  void UpdatePeerList();
+  void UpdatePeerCount();
+  void UpdatePeerListInternal();
+  void UpdatePeerCountInternal();
+  std::wstring FormatPeerEntry(const PeerInfo& peer) const;
+  std::wstring FormatTimestamp(const std::chrono::steady_clock::time_point& timestamp) const;
 
 public:
-    PeerPanel(HWND parent, HINSTANCE hInstance = nullptr);
-    ~PeerPanel();
+  PeerPanel(HWND parent, HINSTANCE hInstance = nullptr);
+  ~PeerPanel();
 
-    bool Show() const;
-    void Hide() const;
-    bool IsVisible() const;
+  bool Show() const;
+  void Hide() const;
+  bool IsVisible() const;
 
-    /**
-     * Updates the peer list with current peer information.
-     *
-     * @param peers Map of peer UUIDs to their information
-     */
-    void updatePeers(const std::unordered_map<std::string, PeerInfo>& peers);
+  /**
+   * Updates the peer list with current peer information.
+   *
+   * @param peers Map of peer UUIDs to their information
+   */
+  void updatePeers(const std::unordered_map<std::string, PeerInfo>& peers);
 
-    /**
-     * Gets the window handle for this panel.
-     */
-    HWND GetHandle() const { return m_hWnd; }
+  /**
+   * Gets the window handle for this panel.
+   */
+  HWND GetHandle() const { return m_hWnd; }
 };

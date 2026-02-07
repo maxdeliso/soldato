@@ -149,10 +149,11 @@ void GameOfLife::update()
   // This ensures full toroidal wrapping still works correctly.
   // It re-processes the whole grid but only actually writes to the edges
   // that AVX skipped.
-  for (int r = 0; r < m_gridHeight; ++r) {
-    // Optimization: if this is a middle row, only do the edge columns
-    bool isMiddleRow = (r > 0 && r < m_gridHeight - 1);
-
+      for (int r = 0; r < m_gridHeight; ++r) {
+  #if defined(_M_X64) || defined(_M_IX86)
+        // Optimization: if this is a middle row, only do the edge columns
+        bool isMiddleRow = (r > 0 && r < m_gridHeight - 1);
+  #endif
     int rUp = (r - 1 + m_gridHeight) % m_gridHeight;
     int rDn = (r + 1) % m_gridHeight;
 

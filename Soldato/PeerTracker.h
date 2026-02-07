@@ -14,17 +14,18 @@
  * Equivalent to the Java PeerTracker.PeerInfo record.
  */
 struct PeerInfo {
-    std::string uuid;                                    // Peer's unique identifier
-    std::string ipAddress;                               // Peer's IP address
-    std::chrono::steady_clock::time_point lastSeen;      // When this peer was last seen
+  std::string uuid;                                    // Peer's unique identifier
+  std::string ipAddress;                               // Peer's IP address
+  std::chrono::steady_clock::time_point lastSeen;      // When this peer was last seen
 
-    PeerInfo() = default;
+  PeerInfo() = default;
 
-    PeerInfo(
-      const std::string& id,
-      const std::string& ip,
-      std::chrono::steady_clock::time_point seen)
-        : uuid(id), ipAddress(ip), lastSeen(seen) {}
+  PeerInfo(
+    const std::string& id,
+    const std::string& ip,
+    std::chrono::steady_clock::time_point seen)
+    : uuid(id), ipAddress(ip), lastSeen(seen) {
+  }
 };
 
 /**
@@ -34,96 +35,96 @@ struct PeerInfo {
  */
 class PeerTracker {
 public:
-    /**
-     * Default timeout for peer activity in seconds.
-     */
-    static constexpr int PEER_TIMEOUT_SECONDS = 30;
+  /**
+   * Default timeout for peer activity in seconds.
+   */
+  static constexpr int PEER_TIMEOUT_SECONDS = 30;
 
-    /**
-     * Creates a new peer tracker.
-     */
-    PeerTracker();
+  /**
+   * Creates a new peer tracker.
+   */
+  PeerTracker();
 
-    /**
-     * Creates a new peer tracker with a specific instance ID.
-     *
-     * @param instanceId The ID to use for this instance
-     */
-    explicit PeerTracker(const std::string& instanceId);
+  /**
+   * Creates a new peer tracker with a specific instance ID.
+   *
+   * @param instanceId The ID to use for this instance
+   */
+  explicit PeerTracker(const std::string& instanceId);
 
-    /**
-     * Destructor - shuts down cleanup thread
-     */
-    ~PeerTracker();
+  /**
+   * Destructor - shuts down cleanup thread
+   */
+  ~PeerTracker();
 
-    // Disable copy constructor and assignment operator
-    PeerTracker(const PeerTracker&) = delete;
-    PeerTracker& operator=(const PeerTracker&) = delete;
+  // Disable copy constructor and assignment operator
+  PeerTracker(const PeerTracker&) = delete;
+  PeerTracker& operator=(const PeerTracker&) = delete;
 
-    /**
-     * Updates peer information when a message is received.
-     *
-     * @param senderId     The sender's UUID
-     * @param senderAddress The sender's IP address
-     */
-    void updatePeer(const std::string& senderId, const std::string& senderAddress);
+  /**
+   * Updates peer information when a message is received.
+   *
+   * @param senderId     The sender's UUID
+   * @param senderAddress The sender's IP address
+   */
+  void updatePeer(const std::string& senderId, const std::string& senderAddress);
 
-    /**
-     * Gets all known peers.
-     *
-     * @return A map of peer UUIDs to their information
-     */
-    std::unordered_map<std::string, PeerInfo> getPeers() const;
+  /**
+   * Gets all known peers.
+   *
+   * @return A map of peer UUIDs to their information
+   */
+  std::unordered_map<std::string, PeerInfo> getPeers() const;
 
-    /**
-     * Gets the number of known peers.
-     *
-     * @return The number of peers
-     */
-    int getPeerCount() const;
+  /**
+   * Gets the number of known peers.
+   *
+   * @return The number of peers
+   */
+  int getPeerCount() const;
 
-    /**
-     * Cleans up peers that haven't been seen recently.
-     */
-    void cleanupInactivePeers();
+  /**
+   * Cleans up peers that haven't been seen recently.
+   */
+  void cleanupInactivePeers();
 
-    /**
-     * Resets the peer tracker by clearing all peers.
-     */
-    void reset();
+  /**
+   * Resets the peer tracker by clearing all peers.
+   */
+  void reset();
 
-    /**
-     * Shuts down the tracker's cleanup thread.
-     */
-    void shutdown();
+  /**
+   * Shuts down the tracker's cleanup thread.
+   */
+  void shutdown();
 
-    /**
-     * Gets the instance ID of this tracker.
-     */
-    std::string getInstanceId() const { return m_instanceId; }
+  /**
+   * Gets the instance ID of this tracker.
+   */
+  std::string getInstanceId() const { return m_instanceId; }
 
 private:
-    /**
-     * The ID of this instance.
-     */
-    std::string m_instanceId;
+  /**
+   * The ID of this instance.
+   */
+  std::string m_instanceId;
 
-    /**
-     * Map of peer UUIDs to their information.
-     */
-    mutable std::mutex m_peersMutex;
-    std::unordered_map<std::string, PeerInfo> m_peers;
+  /**
+   * Map of peer UUIDs to their information.
+   */
+  mutable std::mutex m_peersMutex;
+  std::unordered_map<std::string, PeerInfo> m_peers;
 
-    /**
-     * Cleanup thread and control
-     */
-    std::atomic<bool> m_cleanupRunning;
-    std::thread m_cleanupThread;
-    std::mutex m_cleanupMutex;
-    std::condition_variable m_cleanupCondition;
+  /**
+   * Cleanup thread and control
+   */
+  std::atomic<bool> m_cleanupRunning;
+  std::thread m_cleanupThread;
+  std::mutex m_cleanupMutex;
+  std::condition_variable m_cleanupCondition;
 
-    /**
-     * Cleanup thread function
-     */
-    void cleanupThreadFunction();
+  /**
+   * Cleanup thread function
+   */
+  void cleanupThreadFunction();
 };
