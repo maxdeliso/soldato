@@ -88,9 +88,13 @@ public:
     Message CreateChatMessage(const std::string& sender, const std::string& content);
     Message CreateAcknowledgment(const std::string& sender, const std::string& originalMessageId, bool isPositive);
 
-    // Message tracking and ACK/NACK functionality
+    void SendAcknowledgment(const std::string& originalMessageId, bool isPositive, const sockaddr_storage& peerAddr);
+    void ProcessIncomingMessage(const Message& message, const sockaddr_storage& fromAddr);
+
     void SendAcknowledgment(const std::string& originalMessageId, bool isPositive);
     void ProcessIncomingMessage(const Message& message);
+    // Message tracking and ACK/NACK functionality
+
     MessageTracker* GetMessageTracker() const { return m_messageTracker.get(); }
     const std::string& GetSenderId() const { return m_senderId; }
     std::unordered_map<std::string, long long> GetDeliveryStats() const;
