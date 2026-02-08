@@ -78,6 +78,9 @@
     <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
@@ -186,7 +189,6 @@
     <ClInclude Include="DebugUtils.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Message.h" />
-    <ClInclude Include="yyjson.h" />
     <ClInclude Include="MessageTracker.h" />
     <ClInclude Include="NetworkManager.h" />
     <ClInclude Include="PeerPanel.h" />
@@ -211,9 +213,6 @@
     <ClCompile Include="PeerPanel.cpp" />
     <ClCompile Include="PeerTracker.cpp" />
     <ClCompile Include="Soldato.cpp" />
-    <ClCompile Include="yyjson.c">
-      <CompileAs>CompileAsC</CompileAs>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Soldato.rc" />

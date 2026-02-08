@@ -12,62 +12,62 @@
 
 
 GameOfLife::GameOfLife()
-    : m_cellSize(0)
-    , m_gridWidth(0)
-    , m_gridHeight(0)
-    , m_lastCanvasW(0)
-    , m_lastCanvasH(0)
+  : m_cellSize(0)
+  , m_gridWidth(0)
+  , m_gridHeight(0)
+  , m_lastCanvasW(0)
+  , m_lastCanvasH(0)
 {
 }
 
 void GameOfLife::Resize(int width, int height, int minCellSize)
 {
-    if (width <= 0 || height <= 0) {
-        return;
-    }
+  if (width <= 0 || height <= 0) {
+    return;
+  }
 
-    m_lastCanvasW = width;
-    m_lastCanvasH = height;
+  m_lastCanvasW = width;
+  m_lastCanvasH = height;
 
-    int minEdge = std::min(width, height);
-    // Simplified heuristic: aim ~15 cells across min dimension, but respect minCellSize
-    int targetCellSize = std::max(1, minEdge / 15);
-    int computedCell = std::max(minCellSize, targetCellSize);
-    // Cap cell size at maximum to ensure more cells are displayed on larger canvases
-    computedCell = std::min(computedCell, GOL_MAX_CELL_SIZE);
+  int minEdge = std::min(width, height);
+  // Simplified heuristic: aim ~15 cells across min dimension, but respect minCellSize
+  int targetCellSize = std::max(1, minEdge / 15);
+  int computedCell = std::max(minCellSize, targetCellSize);
+  // Cap cell size at maximum to ensure more cells are displayed on larger canvases
+  computedCell = std::min(computedCell, GOL_MAX_CELL_SIZE);
 
-    int newGridWidth = std::max(1, width / computedCell);
-    int newGridHeight = std::max(1, height / computedCell);
+  int newGridWidth = std::max(1, width / computedCell);
+  int newGridHeight = std::max(1, height / computedCell);
 
-    bool cellChanged = (computedCell != m_cellSize);
-    bool dimsChanged = (newGridWidth != m_gridWidth) || (newGridHeight != m_gridHeight);
+  bool cellChanged = (computedCell != m_cellSize);
+  bool dimsChanged = (newGridWidth != m_gridWidth) || (newGridHeight != m_gridHeight);
 
-    if (cellChanged || dimsChanged) {
-        m_cellSize = computedCell;
-        m_gridWidth = newGridWidth;
-        m_gridHeight = newGridHeight;
+  if (cellChanged || dimsChanged) {
+    m_cellSize = computedCell;
+    m_gridWidth = newGridWidth;
+    m_gridHeight = newGridHeight;
 
-        size_t total = static_cast<size_t>(m_gridWidth) * static_cast<size_t>(m_gridHeight);
-        m_grid.assign(total, 0);
-        m_nextGrid.assign(total, 0);
-        initializeRandom();
-    }
+    size_t total = static_cast<size_t>(m_gridWidth) * static_cast<size_t>(m_gridHeight);
+    m_grid.assign(total, 0);
+    m_nextGrid.assign(total, 0);
+    initializeRandom();
+  }
 }
 
 void GameOfLife::initializeRandom()
 {
-    if (m_gridWidth <= 0 || m_gridHeight <= 0) return;
+  if (m_gridWidth <= 0 || m_gridHeight <= 0) return;
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
-    const float density = 0.18f; // initial live cell probability
-    for (int r = 0; r < m_gridHeight; ++r) {
-        for (int c = 0; c < m_gridWidth; ++c) {
-            m_grid[index(r, c)] = (dist(gen) < density) ? 1 : 0;
-        }
+  const float density = 0.18f; // initial live cell probability
+  for (int r = 0; r < m_gridHeight; ++r) {
+    for (int c = 0; c < m_gridWidth; ++c) {
+      m_grid[index(r, c)] = (dist(gen) < density) ? 1 : 0;
     }
+  }
 }
 
 void GameOfLife::update()
@@ -149,11 +149,11 @@ void GameOfLife::update()
   // This ensures full toroidal wrapping still works correctly.
   // It re-processes the whole grid but only actually writes to the edges
   // that AVX skipped.
-      for (int r = 0; r < m_gridHeight; ++r) {
-  #if defined(_M_X64) || defined(_M_IX86)
-        // Optimization: if this is a middle row, only do the edge columns
-        bool isMiddleRow = (r > 0 && r < m_gridHeight - 1);
-  #endif
+  for (int r = 0; r < m_gridHeight; ++r) {
+#if defined(_M_X64) || defined(_M_IX86)
+    // Optimization: if this is a middle row, only do the edge columns
+    bool isMiddleRow = (r > 0 && r < m_gridHeight - 1);
+#endif
     int rUp = (r - 1 + m_gridHeight) % m_gridHeight;
     int rDn = (r + 1) % m_gridHeight;
 
