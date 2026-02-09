@@ -74,6 +74,8 @@ jobs:
 
     - name: Build solution
       run: |
+        $vcpkgTargetsPath = "${{ env.VCPKG_ROOT }}\scripts\buildsystems\msbuild\vcpkg.targets"
+        Write-Host "VCPKG Targets Path: $vcpkgTargetsPath"
         msbuild $env:SOLUTION_FILE `
           /p:Configuration=${{ matrix.configuration }} `
           /p:Platform=${{ matrix.platform }} `
@@ -81,7 +83,8 @@ jobs:
           /p:EnforceProcessCountAcrossBuilds=true `
           /m `
           /verbosity:minimal `
-          "/flp:logfile=build-${{ matrix.configuration }}-${{ matrix.platform }}.log;verbosity=detailed"
+          "/flp:logfile=build-${{ matrix.configuration }}-${{ matrix.platform }}.log;verbosity=detailed" `
+          "/p:ForceImportBeforeCppTargets=$vcpkgTargetsPath"
         if ($LASTEXITCODE -ne 0) {
           echo "Build failed with exit code $LASTEXITCODE"
           exit $LASTEXITCODE
