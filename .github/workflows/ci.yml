@@ -20,12 +20,16 @@ jobs:
         include:
           - configuration: Debug
             platform: x64
+            triplet: x64-windows
           - configuration: Release
             platform: x64
+            triplet: x64-windows
           - configuration: Debug
             platform: arm64
+            triplet: arm64-windows
           - configuration: Release
             platform: arm64
+            triplet: arm64-windows
 
     steps:
     - name: Checkout code
@@ -49,16 +53,11 @@ jobs:
       uses: microsoft/setup-msbuild@v2
 
     - name: Setup Vcpkg
-      uses: vcpkg-tool/setup-vcpkg@v1
+      uses: johnwason/vcpkg-action@v7
       with:
+        triplet: ${{ matrix.triplet }}
+        manifest-dir: ${{ github.workspace }}
         token: ${{ github.token }}
-        # Set a fixed vcpkg directory to avoid re-cloning on every run if cached
-        vcpkg-root: '${{ github.workspace }}\vcpkg'
-
-    - name: Install Vcpkg dependencies
-      run: |
-        vcpkg install --recurse
-      shell: pwsh
 
     - name: Display build environment
       run: |
