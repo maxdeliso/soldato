@@ -53,12 +53,18 @@ jobs:
       uses: microsoft/setup-msbuild@v2
 
     - name: Setup Vcpkg
-      id: vcpkg # Add ID here
+      id: vcpkg
       uses: johnwason/vcpkg-action@v7
       with:
         triplet: ${{ matrix.triplet }}
         manifest-dir: ${{ github.workspace }}
         token: ${{ github.token }}
+
+    - name: Integrate Vcpkg with MSBuild
+      run: |
+        $vcpkgExe = "${{ steps.vcpkg.outputs.vcpkg-root }}\vcpkg.exe"
+        & $vcpkgExe integrate install
+      shell: pwsh
 
     - name: Display build environment
       run: |
@@ -75,9 +81,6 @@ jobs:
 
     - name: Build solution
       run: |
-        $vcpkgRoot = "${{ steps.vcpkg.outputs.vcpkg-root }}" # Use output from vcpkg action
-        $vcpkgTargetsPath = "$vcpkgRoot\scripts\buildsystems\msbuild\vcpkg.targets"
-        Write-Host "VCPKG Targets Path: $vcpkgTargetsPath"
         msbuild $env:SOLUTION_FILE `
           /p:Configuration=${{ matrix.configuration }} `
           /p:Platform=${{ matrix.platform }} `
@@ -85,8 +88,7 @@ jobs:
           /p:EnforceProcessCountAcrossBuilds=true `
           /m `
           /verbosity:minimal `
-          "/flp:logfile=build-${{ matrix.configuration }}-${{ matrix.platform }}.log;verbosity=detailed" `
-          "/p:ForceImportBeforeCppTargets=$vcpkgTargetsPath"
+          "/flp:logfile=build-${{ matrix.configuration }}-${{ matrix.platform }}.log;verbosity=detailed"
         if ($LASTEXITCODE -ne 0) {
           echo "Build failed with exit code $LASTEXITCODE"
           exit $LASTEXITCODE
