@@ -62,7 +62,8 @@ jobs:
 
     - name: Integrate Vcpkg with MSBuild
       run: |
-        $vcpkgExe = "${{ steps.vcpkg.outputs.vcpkg-root }}\vcpkg.exe"
+        $vcpkgExe = "${{ github.workspace }}\vcpkg\vcpkg.exe"
+        Write-Host "Running vcpkg integrate install from: $vcpkgExe"
         & $vcpkgExe integrate install
       shell: pwsh
 
