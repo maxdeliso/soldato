@@ -53,6 +53,7 @@ jobs:
       uses: microsoft/setup-msbuild@v2
 
     - name: Setup Vcpkg
+      id: vcpkg # Add ID here
       uses: johnwason/vcpkg-action@v7
       with:
         triplet: ${{ matrix.triplet }}
@@ -74,7 +75,8 @@ jobs:
 
     - name: Build solution
       run: |
-        $vcpkgTargetsPath = "${{ env.VCPKG_ROOT }}\scripts\buildsystems\msbuild\vcpkg.targets"
+        $vcpkgRoot = "${{ steps.vcpkg.outputs.vcpkg-root }}" # Use output from vcpkg action
+        $vcpkgTargetsPath = "$vcpkgRoot\scripts\buildsystems\msbuild\vcpkg.targets"
         Write-Host "VCPKG Targets Path: $vcpkgTargetsPath"
         msbuild $env:SOLUTION_FILE `
           /p:Configuration=${{ matrix.configuration }} `
