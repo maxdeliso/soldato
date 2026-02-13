@@ -708,30 +708,66 @@ LRESULT ChatForm::OnPaint()
     }
     SelectObject(memDC, oldPen); // Restore old pen
 
-    // 3. Draw connection status indicator to the memory DC
+    // 3. Draw connection status indicator to the memory DC (Hypercube/Tesseract)
     const int indicatorRadius = 8;
     const int indicatorPadding = 15;
     const int indicatorCenterX = indicatorPadding;
     const int indicatorCenterY = height - indicatorPadding;
 
     bool connected = (m_networkManager && m_networkManager->IsConnected());
+
+    // Define our multi-colored theme based on connection state
     COLORREF statusColor = connected ? SoldatoColors::NEON_GREEN : SoldatoColors::INDICATOR_TIMEOUT;
+    COLORREF frontColor = connected ? RGB(0, 255, 255) : RGB(0, 100, 100);   // Neon Cyan (dims when disconnected)
+    COLORREF backColor = connected ? RGB(255, 0, 255) : RGB(100, 0, 100);    // Neon Magenta (dims when disconnected)
 
-    HBRUSH hStatusBrush = CreateSolidBrush(statusColor);
-    HPEN hStatusPen = CreatePen(PS_SOLID, 2, statusColor);
-    HBRUSH oldBrush = (HBRUSH)SelectObject(memDC, hStatusBrush);
-    HPEN oldStatusPen = (HPEN)SelectObject(memDC, hStatusPen);
+    // Calculate dimensions for the 3D oblique projection
+    const int h = indicatorRadius - 2; // Half-size of the square faces (6px)
+    const int d = 3;                   // Isometric offset distance to create the 3D effect
 
-    Ellipse(memDC,
-            indicatorCenterX - indicatorRadius,
-            indicatorCenterY - indicatorRadius,
-            indicatorCenterX + indicatorRadius,
-            indicatorCenterY + indicatorRadius);
+    // Calculate the 5 points (4 corners + closing point) for the Front Face
+    POINT front[5] = {
+        { indicatorCenterX - d - h, indicatorCenterY + d - h }, // Top-Left
+        { indicatorCenterX - d + h, indicatorCenterY + d - h }, // Top-Right
+        { indicatorCenterX - d + h, indicatorCenterY + d + h }, // Bottom-Right
+        { indicatorCenterX - d - h, indicatorCenterY + d + h }, // Bottom-Left
+        { indicatorCenterX - d - h, indicatorCenterY + d - h }  // Close loop
+    };
 
-    SelectObject(memDC, oldStatusPen);
-    SelectObject(memDC, oldBrush);
-    DeleteObject(hStatusPen);
-    DeleteObject(hStatusBrush);
+    // Calculate the 5 points for the Back Face (offset up and to the right)
+    POINT back[5] = {
+        { indicatorCenterX + d - h, indicatorCenterY - d - h },
+        { indicatorCenterX + d + h, indicatorCenterY - d - h },
+        { indicatorCenterX + d + h, indicatorCenterY - d + h },
+        { indicatorCenterX + d - h, indicatorCenterY - d + h },
+        { indicatorCenterX + d - h, indicatorCenterY - d - h }
+    };
+
+    // Create our multi-colored pens
+    HPEN hFrontPen = CreatePen(PS_SOLID, 1, frontColor);
+    HPEN hBackPen = CreatePen(PS_SOLID, 1, backColor);
+    HPEN hConnPen = CreatePen(PS_SOLID, 1, statusColor);
+
+    // Draw the Back Face first (so it appears behind)
+    oldPen = (HPEN)SelectObject(memDC, hBackPen);
+    Polyline(memDC, back, 5);
+
+    // Draw the Connecting "Network" Lines connecting the vertices
+    SelectObject(memDC, hConnPen);
+    for (int i = 0; i < 4; ++i) {
+      MoveToEx(memDC, back[i].x, back[i].y, nullptr);
+      LineTo(memDC, front[i].x, front[i].y);
+    }
+
+    // Draw the Front Face last (so it renders on top of the connecting lines)
+    SelectObject(memDC, hFrontPen);
+    Polyline(memDC, front, 5);
+
+    // Clean up GDI Objects
+    SelectObject(memDC, oldPen);
+    DeleteObject(hFrontPen);
+    DeleteObject(hBackPen);
+    DeleteObject(hConnPen);
 
     // 4. Transfer the final image from memory DC to screen DC
     BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
