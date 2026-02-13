@@ -46,10 +46,7 @@ jobs:
         echo "build_number=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
       shell: pwsh
 
-    - name: Setup MSVC
-      uses: microsoft/setup-msbuild@v2
-
-    - name: Setup Windows SDK
+    - name: Setup MSVC & Windows SDK
       uses: microsoft/setup-msbuild@v2
 
     - name: Setup Vcpkg
@@ -164,5 +161,5 @@ jobs:
           arm64/${{ matrix.configuration }}/Soldato.pdb
           ARM64/${{ matrix.configuration }}/Soldato.exe
           ARM64/${{ matrix.configuration }}/Soldato.pdb
-        retention-days: 30
+        retention-days: 365
         if-no-files-found: warn
