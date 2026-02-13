@@ -40,7 +40,19 @@ jobs:
     - name: Update version with GitHub Actions build number
       id: version
       run: |
-        .\scripts\update-version-github.ps1
+        # 1. Locate Version.h (searches recursively so it finds it anywhere in the repo)
+        $versionFile = (Get-ChildItem -Recurse -Filter "Version.h").FullName | Select-Object -First 1
+        if ($versionFile) {
+          # 2. Read the file, replace the -1 (or any number) with the GH Run Number, and save it back
+          $content = Get-Content $versionFile
+          $content = $content -replace '#define SOLDATO_VERSION_BUILD\s+[-0-9]+', "#define SOLDATO_VERSION_BUILD $env:GITHUB_RUN_NUMBER"
+          Set-Content -Path $versionFile -Value $content
+          Write-Host "Successfully injected Build Number $env:GITHUB_RUN_NUMBER into $versionFile"
+        } else {
+          Write-Error "Could not find Version.h!"
+          exit 1
+        }
+
         echo "version=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
         echo "display_version=$(git describe --tags --abbrev=0 2>$null | sed 's/^v//')" >> $env:GITHUB_OUTPUT
         echo "build_number=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
