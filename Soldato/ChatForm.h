@@ -79,7 +79,13 @@ private:
   std::unique_ptr<ConnectDialog> m_connectDialog;
   std::unique_ptr<PeerPanel> m_peerPanel;
   HFONT m_hFont;
-  // Note: JSON serialization now handled by JsonUtils.cpp using yyjson
+
+  // Cached double-buffering objects
+  HDC m_hMemDC = nullptr;
+  HBITMAP m_hMemBitmap = nullptr;
+  HBITMAP m_hOldBitmap = nullptr;
+  int m_memWidth = 0;
+  int m_memHeight = 0;
 
   // Pre-created GDI objects for performance optimization
   HBRUSH m_hAckBgBrush;           // Dark green for ACK messages

@@ -247,6 +247,14 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) :
 
 ChatForm::~ChatForm()
 {
+  if (m_hMemDC) {
+    if (m_hMemBitmap) {
+      SelectObject(m_hMemDC, m_hOldBitmap);
+      DeleteObject(m_hMemBitmap);
+    }
+    DeleteDC(m_hMemDC);
+  }
+
   // Clean up GDI objects
   DestroyGDIObjects();
 
@@ -682,58 +690,66 @@ LRESULT ChatForm::OnSize(WPARAM /*wParam*/, LPARAM lParam)
   return 0;
 }
 
-// ChatForm.cpp
 LRESULT ChatForm::OnPaint()
 {
   PAINTSTRUCT ps;
   HDC hdc = BeginPaint(m_hWnd, &ps);
 
-  // --- Start Double Buffering ---
   RECT clientRect;
   GetClientRect(m_hWnd, &clientRect);
   int width = clientRect.right;
   int height = clientRect.bottom;
 
-  // Create a memory DC and bitmap
-  HDC memDC = CreateCompatibleDC(hdc);
-  HBITMAP memBitmap = CreateCompatibleBitmap(hdc, width, height);
-  HBITMAP oldBitmap = (HBITMAP)SelectObject(memDC, memBitmap);
+  // 1. Create the persistent Memory DC if it doesn't exist yet
+  if (!m_hMemDC) {
+    m_hMemDC = CreateCompatibleDC(hdc);
+  }
+
+  // 2. Recreate the Bitmap ONLY if the window size changed or it doesn't exist
+  if (!m_hMemBitmap || width != m_memWidth || height != m_memHeight) {
+    if (m_hMemBitmap) {
+      // Must select the old bitmap back in before deleting the current one
+      SelectObject(m_hMemDC, m_hOldBitmap);
+      DeleteObject(m_hMemBitmap);
+    }
+
+    m_hMemBitmap = CreateCompatibleBitmap(hdc, width, height);
+    m_hOldBitmap = (HBITMAP)SelectObject(m_hMemDC, m_hMemBitmap);
+
+    m_memWidth = width;
+    m_memHeight = height;
+
+    DEBUG_LOG("ChatForm: Resized backbuffer bitmap to " + std::to_string(width) + "x" + std::to_string(height));
+  }
 
   // Define the memory DC rectangle
   RECT memRect = { 0, 0, width, height };
 
-  // 1. Draw solid background to the memory DC
-  FillRect(memDC, &memRect, m_hBackgroundBrush);
+  // 3. Draw solid background to the cached memory DC
+  FillRect(m_hMemDC, &memRect, m_hBackgroundBrush);
 
-  // 2. Draw grid pattern to the memory DC
-  HPEN oldPen = (HPEN)SelectObject(memDC, m_hNeonPen);
-  for (int x = 0; x < width; x += CyberpunkTheme::GRID_SPACING)
-  {
-    MoveToEx(memDC, x, 0, nullptr);
-    LineTo(memDC, x, height);
+  // 4. Draw grid pattern
+  HPEN oldPen = (HPEN)SelectObject(m_hMemDC, m_hNeonPen);
+  for (int x = 0; x < width; x += CyberpunkTheme::GRID_SPACING) {
+    MoveToEx(m_hMemDC, x, 0, nullptr);
+    LineTo(m_hMemDC, x, height);
   }
-  for (int y = 0; y < height; y += CyberpunkTheme::GRID_SPACING)
-  {
-    MoveToEx(memDC, 0, y, nullptr);
-    LineTo(memDC, width, y);
+  for (int y = 0; y < height; y += CyberpunkTheme::GRID_SPACING) {
+    MoveToEx(m_hMemDC, 0, y, nullptr);
+    LineTo(m_hMemDC, width, y);
   }
-  SelectObject(memDC, oldPen); // Restore old pen
+  SelectObject(m_hMemDC, oldPen);
 
+  // 5. Draw indicator
   const int indicatorPadding = 15;
-  const int indicatorCenterX = indicatorPadding;
-  const int indicatorCenterY = height - indicatorPadding;
-
   bool connected = (m_networkManager && m_networkManager->IsConnected());
-  DrawHypercubeIndicator(memDC, indicatorCenterX, indicatorCenterY, connected);
+  DrawHypercubeIndicator(m_hMemDC, indicatorPadding, height - indicatorPadding, connected);
 
-  // 4. Transfer the final image from memory DC to screen DC
-  BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
+  // 6. Transfer the final image from memory DC to screen DC
+  BitBlt(hdc, 0, 0, width, height, m_hMemDC, 0, 0, SRCCOPY);
 
-  // Clean up memory DC
-  SelectObject(memDC, oldBitmap);
-  DeleteObject(memBitmap);
-  DeleteDC(memDC);
-  // --- End Double Buffering ---
+  // Note: We DO NOT delete the memory DC or bitmap here anymore!
+  // They live on to serve the next frame.
 
   EndPaint(m_hWnd, &ps);
   return 0;
