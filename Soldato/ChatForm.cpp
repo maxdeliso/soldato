@@ -719,13 +719,12 @@ LRESULT ChatForm::OnPaint()
   }
   SelectObject(memDC, oldPen); // Restore old pen
 
-  const int indicatorRadius = 8;
   const int indicatorPadding = 15;
   const int indicatorCenterX = indicatorPadding;
   const int indicatorCenterY = height - indicatorPadding;
 
   bool connected = (m_networkManager && m_networkManager->IsConnected());
-  DrawHypercubeIndicator(memDC, indicatorCenterX, indicatorCenterY, indicatorRadius, connected);
+  DrawHypercubeIndicator(memDC, indicatorCenterX, indicatorCenterY, connected);
 
   // 4. Transfer the final image from memory DC to screen DC
   BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
@@ -1074,60 +1073,60 @@ COLORREF ChatForm::GetSinusoidalColor(ULONGLONG timeMs, float phaseOffset) const
   return RGB(r, g, b);
 }
 
-void ChatForm::DrawHypercubeIndicator(HDC memDC, int centerX, int centerY, int radius, bool connected) const {
+void ChatForm::DrawHypercubeIndicator(HDC memDC, int centerX, int centerY, bool connected) const {
   COLORREF frontColor, backColor, connColor;
 
   if (connected) {
     ULONGLONG timeMs = GetTickCount64();
-
     frontColor = GetSinusoidalColor(timeMs, 0.0f);
     backColor = GetSinusoidalColor(timeMs, 1.0f);
     connColor = GetSinusoidalColor(timeMs, 2.0f);
   }
   else {
-    // Dimmed out, static state when disconnected
     frontColor = RGB(0, 100, 100);
     backColor = RGB(100, 0, 100);
     connColor = SoldatoColors::INDICATOR_TIMEOUT;
   }
 
-  const int h = radius - 2;
-  const int d = 3;
+  // 1. Define the geometry as absolute compile-time constants
+  constexpr int radius = 8;
+  constexpr int h = radius - 2;
+  constexpr int d = 3;
 
-  POINT front[5] = {
-      { centerX - d - h, centerY + d - h },
-      { centerX - d + h, centerY + d - h },
-      { centerX - d + h, centerY + d + h },
-      { centerX - d - h, centerY + d + h },
-      { centerX - d - h, centerY + d - h }
+  // 2. These arrays now live purely in the .rdata section! Zero CPU math.
+  static constexpr POINT front[5] = {
+      { -d - h,  d - h }, { -d + h,  d - h }, { -d + h,  d + h },
+      { -d - h,  d + h }, { -d - h,  d - h }
   };
 
-  POINT back[5] = {
-      { centerX + d - h, centerY - d - h },
-      { centerX + d + h, centerY - d - h },
-      { centerX + d + h, centerY - d + h },
-      { centerX + d - h, centerY - d + h },
-      { centerX + d - h, centerY - d - h }
+  static constexpr POINT back[5] = {
+      {  d - h, -d - h }, {  d + h, -d - h }, {  d + h, -d + h },
+      {  d - h, -d + h }, {  d - h, -d - h }
   };
 
   HPEN hFrontPen = CreatePen(PS_SOLID, 1, frontColor);
   HPEN hBackPen = CreatePen(PS_SOLID, 1, backColor);
   HPEN hConnPen = CreatePen(PS_SOLID, 1, connColor);
 
-  // 1. Draw back face
+  // 3. THE TRICK: Tell GDI to move (0,0) to our dynamic center
+  POINT oldOrg;
+  SetViewportOrgEx(memDC, centerX, centerY, &oldOrg);
+
+  // 4. Draw using the .rdata arrays directly
   HPEN oldPen = (HPEN)SelectObject(memDC, hBackPen);
   Polyline(memDC, back, 5);
 
-  // 2. Draw connecting lines
   SelectObject(memDC, hConnPen);
   for (int i = 0; i < 4; ++i) {
     MoveToEx(memDC, back[i].x, back[i].y, nullptr);
     LineTo(memDC, front[i].x, front[i].y);
   }
 
-  // 3. Draw front face
   SelectObject(memDC, hFrontPen);
   Polyline(memDC, front, 5);
+
+  // 5. CRITICAL: Restore the original GDI coordinate system
+  SetViewportOrgEx(memDC, oldOrg.x, oldOrg.y, nullptr);
 
   // Cleanup
   SelectObject(memDC, oldPen);
