@@ -143,18 +143,30 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) :
   // Register the chat form window class
   static bool classRegistered = false;
   if (!classRegistered) {
-    WNDCLASSEXW wcex = {};
-    wcex.cbSize = sizeof(WNDCLASSEX);
-    wcex.style = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc = ChatFormProc;
-    wcex.cbClsExtra = 0;
-    wcex.cbWndExtra = sizeof(ChatForm*);
+
+    // This const aggregate gets baked directly into the .rdata section
+    static const WNDCLASSEXW wcexTemplate = {
+      sizeof(WNDCLASSEXW),                        // cbSize
+      CS_HREDRAW | CS_VREDRAW,                    // style
+      ChatFormProc,                               // lpfnWndProc
+      0,                                          // cbClsExtra
+      sizeof(ChatForm*),                          // cbWndExtra
+      nullptr,                                    // hInstance (Runtime)
+      nullptr,                                    // hIcon (Runtime)
+      nullptr,                                    // hCursor (Runtime)
+      (HBRUSH)(COLOR_WINDOW + 1),                 // hbrBackground
+      nullptr,                                    // lpszMenuName
+      L"ChatFormClass",                           // lpszClassName
+      nullptr                                     // hIconSm (Runtime)
+    };
+
+    // The compiler turns this into a hyper-fast inline memory copy from .rdata
+    WNDCLASSEXW wcex = wcexTemplate;
+
+    // Patch in the runtime-dependent handles
     wcex.hInstance = m_hInstance;
     wcex.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SOLDATO));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // Standard background
-    wcex.lpszMenuName = nullptr;
-    wcex.lpszClassName = L"ChatFormClass";
     wcex.hIconSm = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
     RegisterClassExW(&wcex);
