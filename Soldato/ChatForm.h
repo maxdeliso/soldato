@@ -79,7 +79,13 @@ private:
   std::unique_ptr<ConnectDialog> m_connectDialog;
   std::unique_ptr<PeerPanel> m_peerPanel;
   HFONT m_hFont;
-  // Note: JSON serialization now handled by JsonUtils.cpp using yyjson
+
+  // Cached double-buffering objects
+  HDC m_hMemDC = nullptr;
+  HBITMAP m_hMemBitmap = nullptr;
+  HBITMAP m_hOldBitmap = nullptr;
+  int m_memWidth = 0;
+  int m_memHeight = 0;
 
   // Pre-created GDI objects for performance optimization
   HBRUSH m_hAckBgBrush;           // Dark green for ACK messages
@@ -143,17 +149,16 @@ private:
   // Owner-drawn ListBox handlers
   void OnMeasureItem(MEASUREITEMSTRUCT* pMeasureItem);
   void OnDrawItem(DRAWITEMSTRUCT* pDrawItem);
-  void UpdateMessageAckStatus(const std::string& messageId);
   void DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message) const;
   void DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& message);
   void DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& message) const;
 
-  COLORREF GetSinusoidalColor(DWORD timeMs, double phaseOffset) const;
-  void DrawHypercubeIndicator(HDC memDC, int centerX, int centerY, int radius, bool connected) const;
+  COLORREF GetSinusoidalColor(ULONGLONG timeMs, float phaseOffset) const;
+  void DrawHypercubeIndicator(HDC memDC, int centerX, int centerY, bool connected) const;
 
 public:
   void UpdateConnectionUI();
-  void EnableDisconnectControls(bool enable);
+  void EnableDisconnectControls(bool enable) const;
   HWND GetConnectDialogHandle() const;
 
 public:
@@ -166,7 +171,7 @@ public:
 
   void AddChatMessage(const std::wstring& sender, const std::wstring& message, const std::string& messageId = "");
   void ClearChat();
-  void FocusMessageInput();
+  void FocusMessageInput() const;
   void UpdatePeerDisplay();
 
   // Pending messages management

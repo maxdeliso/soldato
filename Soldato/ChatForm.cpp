@@ -36,18 +36,18 @@ enum class MessageStatus {
   TimedOut = 3
 };
 
-// Helper function to get status symbol
-static std::wstring GetStatusSymbol(MessageStatus status) {
+// Return a raw 2-byte wide character
+static wchar_t GetStatusSymbol(MessageStatus status) {
   switch (status) {
   case MessageStatus::TimedOut:
-    return L"T";
+    return L'T';
   case MessageStatus::NegativelyAcknowledged:
-    return L"X";
+    return L'X';
   case MessageStatus::Acknowledged:
-    return L"V";
+    return L'V';
   case MessageStatus::Pending:
   default:
-    return L"?";
+    return L'?';
   }
 }
 
@@ -143,18 +143,30 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) :
   // Register the chat form window class
   static bool classRegistered = false;
   if (!classRegistered) {
-    WNDCLASSEXW wcex = {};
-    wcex.cbSize = sizeof(WNDCLASSEX);
-    wcex.style = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc = ChatFormProc;
-    wcex.cbClsExtra = 0;
-    wcex.cbWndExtra = sizeof(ChatForm*);
+
+    // This const aggregate gets baked directly into the .rdata section
+    static const WNDCLASSEXW wcexTemplate = {
+      sizeof(WNDCLASSEXW),                        // cbSize
+      CS_HREDRAW | CS_VREDRAW,                    // style
+      ChatFormProc,                               // lpfnWndProc
+      0,                                          // cbClsExtra
+      sizeof(ChatForm*),                          // cbWndExtra
+      nullptr,                                    // hInstance (Runtime)
+      nullptr,                                    // hIcon (Runtime)
+      nullptr,                                    // hCursor (Runtime)
+      (HBRUSH)(COLOR_WINDOW + 1),                 // hbrBackground
+      nullptr,                                    // lpszMenuName
+      L"ChatFormClass",                           // lpszClassName
+      nullptr                                     // hIconSm (Runtime)
+    };
+
+    // The compiler turns this into a hyper-fast inline memory copy from .rdata
+    WNDCLASSEXW wcex = wcexTemplate;
+
+    // Patch in the runtime-dependent handles
     wcex.hInstance = m_hInstance;
     wcex.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SOLDATO));
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // Standard background
-    wcex.lpszMenuName = nullptr;
-    wcex.lpszClassName = L"ChatFormClass";
     wcex.hIconSm = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
     RegisterClassExW(&wcex);
@@ -235,14 +247,19 @@ ChatForm::ChatForm(HWND parent, HINSTANCE hInstance) :
 
 ChatForm::~ChatForm()
 {
+  if (m_hMemDC) {
+    if (m_hMemBitmap) {
+      SelectObject(m_hMemDC, m_hOldBitmap);
+      DeleteObject(m_hMemBitmap);
+    }
+    DeleteDC(m_hMemDC);
+  }
+
   // Clean up GDI objects
   DestroyGDIObjects();
 
-  // Clean up the font
-  if (m_hFont)
-  {
-    DeleteObject(m_hFont);
-    m_hFont = nullptr;
+  if (HFONT oldFont = std::exchange(m_hFont, nullptr)) {
+    DeleteObject(oldFont);
   }
 
   // Smart pointers handle cleanup automatically
@@ -581,74 +598,59 @@ LRESULT ChatForm::OnSystemEvent(LPARAM lParam)
 LRESULT ChatForm::OnUpdateAckStatus()
 {
   DEBUG_LOG("ChatForm: WM_APP_UPDATE_ACK received");
-  // Update only pending message acknowledgment statuses for performance
   bool needsRedraw = false;
+
   if (m_networkManager && !m_pendingMessages.empty()) {
-    // Get the MessageTracker from NetworkManager once at the beginning
     auto networkTracker = m_networkManager->GetMessageTracker();
     if (networkTracker) {
-      // Create a copy of pending messages to iterate over (in case we modify the set)
-      std::unordered_set<std::string> pendingCopy = m_pendingMessages;
+      for (auto it = m_pendingMessages.begin(); it != m_pendingMessages.end(); ) {
+        const std::string& messageId = *it;
 
-      for (const std::string& messageId : pendingCopy) {
-        // Find the message in our deque
-        auto msgIt = std::find_if(m_chatMessages.begin(), m_chatMessages.end(),
+        auto msgIt = std::find_if(m_chatMessages.rbegin(), m_chatMessages.rend(),
           [&messageId](const ChatMessage& msg) { return msg.messageId == messageId; });
 
-        if (msgIt != m_chatMessages.end()) {
+        if (msgIt != m_chatMessages.rend()) {
           auto& msg = *msgIt;
           auto ackParties = networkTracker->getAcknowledgingParties(msg.messageId);
           bool hadAck = msg.hasAck;
           bool wasTimedOut = msg.isTimedOut;
 
           msg.acknowledgingParties = ackParties;
-          msg.hasAck = networkTracker->hasAcknowledgment(msg.messageId);
+          msg.hasAck = networkTracker->hasAcknowledgment(messageId);
 
-          // Check for timeout with protection against extreme time jumps
           auto now = std::chrono::steady_clock::now();
           auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - msg.timestamp).count();
 
-          // Protect against extreme time jumps (e.g., from sleep/hibernate)
-          // If elapsed time is unreasonably large, treat as timeout but don't spam
           constexpr long long MAX_REASONABLE_ELAPSED = 60 * 60; // 1 hour
           bool isTimedOut = false;
 
           if (elapsed > MAX_REASONABLE_ELAPSED) {
-            // Extreme time jump - likely from sleep/hibernate
-            // Mark as timed out but don't trigger excessive redraws
             isTimedOut = true;
             DEBUG_LOG("ChatForm: Extreme time jump detected (" + std::to_string(elapsed) +
               "s) for message " + msg.messageId + " - treating as timeout");
           }
           else if (elapsed > MessageTracker::MESSAGE_TIMEOUT_SECONDS) {
-            // Normal timeout
             isTimedOut = true;
           }
 
           msg.isTimedOut = (isTimedOut && !msg.hasAck);
 
           if (hadAck != msg.hasAck || wasTimedOut != msg.isTimedOut) {
-            DEBUG_LOG("ChatForm: Message " + msg.messageId + " status changed - hasAck: " +
-              (msg.hasAck ? "true" : "false") + ", isTimedOut: " +
-              (msg.isTimedOut ? "true" : "false"));
             needsRedraw = true;
+          }
 
-            // Remove from pending set if message is acknowledged or timed out
-            if (msg.hasAck || msg.isTimedOut) {
-              m_pendingMessages.erase(msg.messageId);
-              DEBUG_LOG("ChatForm: Removed message " + msg.messageId + " from pending set");
-            }
+          if (msg.hasAck || msg.isTimedOut) {
+            DEBUG_LOG("ChatForm: Removed message " + msg.messageId + " from pending set");
+            it = m_pendingMessages.erase(it);
+            continue;
           }
         }
+
+        ++it;
       }
 
-      // Only invalidate if something actually changed
       if (needsRedraw && m_hChatListBox) {
-        DEBUG_LOG("ChatForm: Invalidating ListBox for redraw");
         InvalidateRect(m_hChatListBox, nullptr, TRUE);
-      }
-      else {
-        DEBUG_LOG("ChatForm: No changes detected, skipping redraw");
       }
     }
   }
@@ -688,60 +690,66 @@ LRESULT ChatForm::OnSize(WPARAM /*wParam*/, LPARAM lParam)
   return 0;
 }
 
-// ChatForm.cpp
 LRESULT ChatForm::OnPaint()
 {
   PAINTSTRUCT ps;
   HDC hdc = BeginPaint(m_hWnd, &ps);
 
-  // --- Start Double Buffering ---
   RECT clientRect;
   GetClientRect(m_hWnd, &clientRect);
   int width = clientRect.right;
   int height = clientRect.bottom;
 
-  // Create a memory DC and bitmap
-  HDC memDC = CreateCompatibleDC(hdc);
-  HBITMAP memBitmap = CreateCompatibleBitmap(hdc, width, height);
-  HBITMAP oldBitmap = (HBITMAP)SelectObject(memDC, memBitmap);
+  // 1. Create the persistent Memory DC if it doesn't exist yet
+  if (!m_hMemDC) {
+    m_hMemDC = CreateCompatibleDC(hdc);
+  }
+
+  // 2. Recreate the Bitmap ONLY if the window size changed or it doesn't exist
+  if (!m_hMemBitmap || width != m_memWidth || height != m_memHeight) {
+    if (m_hMemBitmap) {
+      // Must select the old bitmap back in before deleting the current one
+      SelectObject(m_hMemDC, m_hOldBitmap);
+      DeleteObject(m_hMemBitmap);
+    }
+
+    m_hMemBitmap = CreateCompatibleBitmap(hdc, width, height);
+    m_hOldBitmap = (HBITMAP)SelectObject(m_hMemDC, m_hMemBitmap);
+
+    m_memWidth = width;
+    m_memHeight = height;
+
+    DEBUG_LOG("ChatForm: Resized backbuffer bitmap to " + std::to_string(width) + "x" + std::to_string(height));
+  }
 
   // Define the memory DC rectangle
   RECT memRect = { 0, 0, width, height };
 
-  // 1. Draw solid background to the memory DC
-  FillRect(memDC, &memRect, m_hBackgroundBrush);
+  // 3. Draw solid background to the cached memory DC
+  FillRect(m_hMemDC, &memRect, m_hBackgroundBrush);
 
-  // 2. Draw grid pattern to the memory DC
-  HPEN oldPen = (HPEN)SelectObject(memDC, m_hNeonPen);
-  for (int x = 0; x < width; x += CyberpunkTheme::GRID_SPACING)
-  {
-    MoveToEx(memDC, x, 0, nullptr);
-    LineTo(memDC, x, height);
+  // 4. Draw grid pattern
+  HPEN oldPen = (HPEN)SelectObject(m_hMemDC, m_hNeonPen);
+  for (int x = 0; x < width; x += CyberpunkTheme::GRID_SPACING) {
+    MoveToEx(m_hMemDC, x, 0, nullptr);
+    LineTo(m_hMemDC, x, height);
   }
-  for (int y = 0; y < height; y += CyberpunkTheme::GRID_SPACING)
-  {
-    MoveToEx(memDC, 0, y, nullptr);
-    LineTo(memDC, width, y);
+  for (int y = 0; y < height; y += CyberpunkTheme::GRID_SPACING) {
+    MoveToEx(m_hMemDC, 0, y, nullptr);
+    LineTo(m_hMemDC, width, y);
   }
-  SelectObject(memDC, oldPen); // Restore old pen
+  SelectObject(m_hMemDC, oldPen);
 
-  // 3. Draw connection status indicator to the memory DC (Hypercube/Tesseract)
-  const int indicatorRadius = 8;
+  // 5. Draw indicator
   const int indicatorPadding = 15;
-  const int indicatorCenterX = indicatorPadding;
-  const int indicatorCenterY = height - indicatorPadding;
-
   bool connected = (m_networkManager && m_networkManager->IsConnected());
-  DrawHypercubeIndicator(memDC, indicatorCenterX, indicatorCenterY, indicatorRadius, connected);
+  DrawHypercubeIndicator(m_hMemDC, indicatorPadding, height - indicatorPadding, connected);
 
-  // 4. Transfer the final image from memory DC to screen DC
-  BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
+  // 6. Transfer the final image from memory DC to screen DC
+  BitBlt(hdc, 0, 0, width, height, m_hMemDC, 0, 0, SRCCOPY);
 
-  // Clean up memory DC
-  SelectObject(memDC, oldBitmap);
-  DeleteObject(memBitmap);
-  DeleteDC(memDC);
-  // --- End Double Buffering ---
+  // Note: We DO NOT delete the memory DC or bitmap here anymore!
+  // They live on to serve the next frame.
 
   EndPaint(m_hWnd, &ps);
   return 0;
@@ -942,10 +950,10 @@ void ChatForm::InitializeControls()
   // Set font for send button
   if (m_hSendButton) {
     SendMessage(m_hSendButton, WM_SETFONT, (WPARAM)m_hFont, TRUE);
-  }
 
-  // Set cyberpunk colors for send button
-  SendMessage(m_hSendButton, BM_SETCHECK, BST_UNCHECKED, 0);
+    // Set cyberpunk colors for send button
+    SendMessage(m_hSendButton, BM_SETCHECK, BST_UNCHECKED, 0);
+  }
 
   // Force window update to ensure controls are displayed
   UpdateWindow(m_hWnd);
@@ -1061,74 +1069,80 @@ bool ChatForm::IsVisible() const
   return m_hWnd && IsWindowVisible(m_hWnd);
 }
 
-COLORREF ChatForm::GetSinusoidalColor(DWORD timeMs, double phaseOffset) const {
-  // Controls the speed of the color cycle. Lower = slower shimmer.
-  const double frequency = 0.003;
+COLORREF ChatForm::GetSinusoidalColor(ULONGLONG timeMs, float phaseOffset) const {
+  // 1. Calculate the continuously growing angle in 64-bit precision 
+  // to survive months of system uptime without precision loss.
+  double scaledTime = 0.003 * static_cast<double>(timeMs);
 
-  // 2.09439 is roughly 2*PI/3, 4.18879 is 4*PI/3
-  BYTE r = static_cast<BYTE>(sin(frequency * timeMs + phaseOffset) * 127 + 128);
-  BYTE g = static_cast<BYTE>(sin(frequency * timeMs + phaseOffset + 2.09439) * 127 + 128);
-  BYTE b = static_cast<BYTE>(sin(frequency * timeMs + phaseOffset + 4.18879) * 127 + 128);
+  // 2. Wrap the angle to a maximum of 2*PI (6.2831853...)
+  // This keeps the value extremely small.
+  double wrappedAngle = fmod(scaledTime, 6.283185307179586);
+
+  // 3. NOW it is 100% safe to cast down to a 32-bit float for the hardware math
+  float baseAngle = static_cast<float>(wrappedAngle);
+
+  // 4. Strict FP32 execution pipeline
+  BYTE r = static_cast<BYTE>(sinf(baseAngle + phaseOffset) * 127.0f + 128.0f);
+  BYTE g = static_cast<BYTE>(sinf(baseAngle + phaseOffset + 2.09439f) * 127.0f + 128.0f);
+  BYTE b = static_cast<BYTE>(sinf(baseAngle + phaseOffset + 4.18879f) * 127.0f + 128.0f);
 
   return RGB(r, g, b);
 }
 
-void ChatForm::DrawHypercubeIndicator(HDC memDC, int centerX, int centerY, int radius, bool connected) const {
+void ChatForm::DrawHypercubeIndicator(HDC memDC, int centerX, int centerY, bool connected) const {
   COLORREF frontColor, backColor, connColor;
 
   if (connected) {
-    DWORD timeMs = GetTickCount();
-
-    // Offset the phases slightly so the front, back, and connecting lines
-    // are all at different points in the color spectrum at the same time.
-    frontColor = GetSinusoidalColor(timeMs, 0.0);
-    backColor = GetSinusoidalColor(timeMs, 1.0);
-    connColor = GetSinusoidalColor(timeMs, 2.0);
+    ULONGLONG timeMs = GetTickCount64();
+    frontColor = GetSinusoidalColor(timeMs, 0.0f);
+    backColor = GetSinusoidalColor(timeMs, 1.0f);
+    connColor = GetSinusoidalColor(timeMs, 2.0f);
   }
   else {
-    // Dimmed out, static state when disconnected
     frontColor = RGB(0, 100, 100);
     backColor = RGB(100, 0, 100);
     connColor = SoldatoColors::INDICATOR_TIMEOUT;
   }
 
-  const int h = radius - 2;
-  const int d = 3;
+  // 1. Define the geometry as absolute compile-time constants
+  constexpr int radius = 8;
+  constexpr int h = radius - 2;
+  constexpr int d = 3;
 
-  POINT front[5] = {
-      { centerX - d - h, centerY + d - h },
-      { centerX - d + h, centerY + d - h },
-      { centerX - d + h, centerY + d + h },
-      { centerX - d - h, centerY + d + h },
-      { centerX - d - h, centerY + d - h }
+  // 2. These arrays now live purely in the .rdata section! Zero CPU math.
+  static constexpr POINT front[5] = {
+      { -d - h,  d - h }, { -d + h,  d - h }, { -d + h,  d + h },
+      { -d - h,  d + h }, { -d - h,  d - h }
   };
 
-  POINT back[5] = {
-      { centerX + d - h, centerY - d - h },
-      { centerX + d + h, centerY - d - h },
-      { centerX + d + h, centerY - d + h },
-      { centerX + d - h, centerY - d + h },
-      { centerX + d - h, centerY - d - h }
+  static constexpr POINT back[5] = {
+      {  d - h, -d - h }, {  d + h, -d - h }, {  d + h, -d + h },
+      {  d - h, -d + h }, {  d - h, -d - h }
   };
 
   HPEN hFrontPen = CreatePen(PS_SOLID, 1, frontColor);
   HPEN hBackPen = CreatePen(PS_SOLID, 1, backColor);
   HPEN hConnPen = CreatePen(PS_SOLID, 1, connColor);
 
-  // 1. Draw back face
+  // 3. THE TRICK: Tell GDI to move (0,0) to our dynamic center
+  POINT oldOrg;
+  SetViewportOrgEx(memDC, centerX, centerY, &oldOrg);
+
+  // 4. Draw using the .rdata arrays directly
   HPEN oldPen = (HPEN)SelectObject(memDC, hBackPen);
   Polyline(memDC, back, 5);
 
-  // 2. Draw connecting lines
   SelectObject(memDC, hConnPen);
   for (int i = 0; i < 4; ++i) {
     MoveToEx(memDC, back[i].x, back[i].y, nullptr);
     LineTo(memDC, front[i].x, front[i].y);
   }
 
-  // 3. Draw front face
   SelectObject(memDC, hFrontPen);
   Polyline(memDC, front, 5);
+
+  // 5. CRITICAL: Restore the original GDI coordinate system
+  SetViewportOrgEx(memDC, oldOrg.x, oldOrg.y, nullptr);
 
   // Cleanup
   SelectObject(memDC, oldPen);
@@ -1268,8 +1282,7 @@ void ChatForm::SendChatMessage()
   }
 }
 
-
-void ChatForm::FocusMessageInput()
+void ChatForm::FocusMessageInput() const
 {
   if (m_hMessageInput)
   {
@@ -1358,7 +1371,6 @@ void ChatForm::UpdateConnectionUI()
     bool connected = m_networkManager->IsConnected();
     DEBUG_LOG("ChatForm: UpdateConnectionUI called - connected: " + std::string(connected ? "true" : "false"));
 
-
     EnableDisconnectControls(connected);
 
     // Ensure proper button focus when connection state changes
@@ -1374,7 +1386,7 @@ void ChatForm::UpdateConnectionUI()
   }
 }
 
-void ChatForm::EnableDisconnectControls(bool enable)
+void ChatForm::EnableDisconnectControls(bool enable) const
 {
   // Enable/disable menu items based on connection state
   HMENU hMenu = GetMenu(m_hWnd);
@@ -1591,7 +1603,6 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   return (INT_PTR)FALSE;
 }
 
-// Helper function to bring window to foreground using proper Windows pattern
 void ChatForm::BringWindowToForeground(HWND hWnd)
 {
   if (!hWnd) return;
@@ -1644,7 +1655,6 @@ void ChatForm::BringWindowToForeground(HWND hWnd)
   DEBUG_LOG("ChatForm: BringWindowToForeground completed");
 }
 
-// Helper function to resolve proper module handle
 HINSTANCE ChatForm::ResolveModuleHandle(HINSTANCE hInstance)
 {
   // Get the proper module handle - use provided instance or fall back to main executable
@@ -1659,7 +1669,6 @@ HINSTANCE ChatForm::ResolveModuleHandle(HINSTANCE hInstance)
   return hModule;
 }
 
-// Owner-drawn ListBox implementation
 void ChatForm::OnMeasureItem(MEASUREITEMSTRUCT* pMeasureItem)
 {
   if (pMeasureItem->itemID >= 0 && pMeasureItem->itemID < static_cast<int>(m_chatMessages.size())) {
@@ -1838,11 +1847,9 @@ void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& me
   SetBkMode(hdc, TRANSPARENT);
   SetTextColor(hdc, textColor);
 
-  std::wstring statusSymbol = GetStatusSymbol(status);
-
-  // Center the symbol in the indicator
+  wchar_t statusSymbol = GetStatusSymbol(status);
   RECT textRect = indicatorRect;
-  DrawTextW(hdc, statusSymbol.c_str(), static_cast<int>(statusSymbol.length()), &textRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+  DrawTextW(hdc, &statusSymbol, 1, &textRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
 void ChatForm::DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& message)
@@ -1868,28 +1875,4 @@ void ChatForm::DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& mes
 
   SetTextColor(hdc, UNPACK_MESSAGE_COLOR(message.packedColors));
   DrawTextW(hdc, message.message.c_str(), -1, &senderRect, DT_WORDBREAK);
-}
-
-void ChatForm::UpdateMessageAckStatus(const std::string& messageId)
-{
-  // Find the message in our deque and update its acknowledgment status
-  for (auto& msg : m_chatMessages) {
-    if (msg.messageId == messageId) {
-      if (m_networkManager) {
-        auto networkTracker = m_networkManager->GetMessageTracker();
-        if (networkTracker) {
-          auto ackParties = networkTracker->getAcknowledgingParties(messageId);
-          msg.acknowledgingParties = ackParties;
-          msg.hasAck = networkTracker->hasAcknowledgment(messageId);
-          msg.hasNack = networkTracker->hasNegativeAcknowledgment(messageId);
-        }
-      }
-      break;
-    }
-  }
-
-  // Invalidate the ListBox to trigger redraw
-  if (m_hChatListBox) {
-    InvalidateRect(m_hChatListBox, nullptr, TRUE);
-  }
 }
