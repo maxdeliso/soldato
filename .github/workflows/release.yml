@@ -33,7 +33,16 @@ jobs:
     - name: Update version with GitHub Actions build number
       id: version
       run: |
-        .\scripts\update-version-github.ps1
+        $versionFile = (Get-ChildItem -Recurse -Filter "Version.h").FullName | Select-Object -First 1
+        if ($versionFile) {
+          $content = Get-Content $versionFile
+          $content = $content -replace '#define SOLDATO_VERSION_BUILD\s+[-0-9]+', "#define SOLDATO_VERSION_BUILD $env:GITHUB_RUN_NUMBER"
+          Set-Content -Path $versionFile -Value $content
+        } else {
+          Write-Error "Could not find Version.h!"
+          exit 1
+        }
+
         echo "version=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
         echo "display_version=$(git describe --tags --abbrev=0 2>$null | sed 's/^v//' || echo '1.0.0')" >> $env:GITHUB_OUTPUT
         echo "build_number=$env:GITHUB_RUN_NUMBER" >> $env:GITHUB_OUTPUT
@@ -57,6 +66,9 @@ jobs:
         & $vcpkgExe integrate install
       shell: pwsh
 
+    - name: Restore NuGet packages
+      run: nuget restore Soldato.sln
+      continue-on-error: true
 
     - name: Build ${{ matrix.platform }}
       run: |
@@ -133,7 +145,7 @@ jobs:
         path: artifacts
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.tag.outputs.tag_name }}
         name: Release ${{ steps.tag.outputs.display_version }}
@@ -144,19 +156,7 @@ jobs:
           - **x64** (64-bit Windows)
           - **ARM64** (ARM64 Windows)
 
-          ### Installation
-          1. Download the appropriate ZIP file for your architecture
-          2. Extract the ZIP file
-          3. Run `Soldato.exe`
-
-          ### System Requirements
-          - Windows 10 or later
-          - No additional dependencies required
-
           ### Changes
-          See the [changelog](https://github.com/${{ github.repository }}/compare/${{ steps.tag.outputs.display_version }}^...${{ steps.tag.outputs.display_version }}) for detailed changes.
-        files: |
-          artifacts/Soldato-x64/Soldato-${{ steps.tag.outputs.display_version }}-x64.zip
-          artifacts/Soldato-arm64/Soldato-${{ steps.tag.outputs.display_version }}-arm64.zip
+          See the [changelog](https://github.com/${{ github.repository }}/compare/${{ steps.tag.outputs.tag_name }}^...${{ steps.tag.outputs.tag_name }}) for detailed changes.
         draft: false
         prerelease: false
