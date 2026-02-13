@@ -250,11 +250,8 @@ ChatForm::~ChatForm()
   // Clean up GDI objects
   DestroyGDIObjects();
 
-  // Clean up the font
-  if (m_hFont)
-  {
-    DeleteObject(m_hFont);
-    m_hFont = nullptr;
+  if (HFONT oldFont = std::exchange(m_hFont, nullptr)) {
+    DeleteObject(oldFont);
   }
 
   // Smart pointers handle cleanup automatically
