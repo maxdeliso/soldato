@@ -36,18 +36,18 @@ enum class MessageStatus {
   TimedOut = 3
 };
 
-// Helper function to get status symbol
-static std::wstring GetStatusSymbol(MessageStatus status) {
+// Return a raw 2-byte wide character
+static wchar_t GetStatusSymbol(MessageStatus status) {
   switch (status) {
   case MessageStatus::TimedOut:
-    return L"T";
+    return L'T';
   case MessageStatus::NegativelyAcknowledged:
-    return L"X";
+    return L'X';
   case MessageStatus::Acknowledged:
-    return L"V";
+    return L'V';
   case MessageStatus::Pending:
   default:
-    return L"?";
+    return L'?';
   }
 }
 
@@ -1821,11 +1821,9 @@ void ChatForm::DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& me
   SetBkMode(hdc, TRANSPARENT);
   SetTextColor(hdc, textColor);
 
-  std::wstring statusSymbol = GetStatusSymbol(status);
-
-  // Center the symbol in the indicator
+  wchar_t statusSymbol = GetStatusSymbol(status);
   RECT textRect = indicatorRect;
-  DrawTextW(hdc, statusSymbol.c_str(), static_cast<int>(statusSymbol.length()), &textRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+  DrawTextW(hdc, &statusSymbol, 1, &textRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
 void ChatForm::DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& message)
