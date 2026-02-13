@@ -935,10 +935,10 @@ void ChatForm::InitializeControls()
   // Set font for send button
   if (m_hSendButton) {
     SendMessage(m_hSendButton, WM_SETFONT, (WPARAM)m_hFont, TRUE);
-  }
 
-  // Set cyberpunk colors for send button
-  SendMessage(m_hSendButton, BM_SETCHECK, BST_UNCHECKED, 0);
+    // Set cyberpunk colors for send button
+    SendMessage(m_hSendButton, BM_SETCHECK, BST_UNCHECKED, 0);
+  }
 
   // Force window update to ensure controls are displayed
   UpdateWindow(m_hWnd);
