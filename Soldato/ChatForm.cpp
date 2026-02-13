@@ -367,7 +367,20 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
     {
     case WM_CREATE:
         DEBUG_LOG("ChatForm: WM_CREATE received");
+        SetTimer(m_hWnd, INDICATOR_TIMER_ID, 7, nullptr);
         return 0;
+
+    case WM_TIMER:
+        if (wParam == INDICATOR_TIMER_ID) {
+          // Only invalidate the small corner where the indicator lives 
+          // so we don't waste CPU redrawing the whole chat history
+          RECT clientRect;
+          GetClientRect(m_hWnd, &clientRect);
+          RECT indicatorRect = { 0, clientRect.bottom - 40, 40, clientRect.bottom };
+          InvalidateRect(m_hWnd, &indicatorRect, FALSE);
+          return 0;
+        }
+        break;
 
     case WM_KEYDOWN:
         return OnKeyDown(wParam);
@@ -465,6 +478,7 @@ LRESULT ChatForm::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_DESTROY:
         DEBUG_LOG("ChatForm: WM_DESTROY received - posting quit message");
+        KillTimer(m_hWnd, INDICATOR_TIMER_ID); // Clean up the timer
         PostQuitMessage(0);
         return 0;
     }
@@ -715,59 +729,7 @@ LRESULT ChatForm::OnPaint()
     const int indicatorCenterY = height - indicatorPadding;
 
     bool connected = (m_networkManager && m_networkManager->IsConnected());
-
-    // Define our multi-colored theme based on connection state
-    COLORREF statusColor = connected ? SoldatoColors::NEON_GREEN : SoldatoColors::INDICATOR_TIMEOUT;
-    COLORREF frontColor = connected ? RGB(0, 255, 255) : RGB(0, 100, 100);   // Neon Cyan (dims when disconnected)
-    COLORREF backColor = connected ? RGB(255, 0, 255) : RGB(100, 0, 100);    // Neon Magenta (dims when disconnected)
-
-    // Calculate dimensions for the 3D oblique projection
-    const int h = indicatorRadius - 2; // Half-size of the square faces (6px)
-    const int d = 3;                   // Isometric offset distance to create the 3D effect
-
-    // Calculate the 5 points (4 corners + closing point) for the Front Face
-    POINT front[5] = {
-        { indicatorCenterX - d - h, indicatorCenterY + d - h }, // Top-Left
-        { indicatorCenterX - d + h, indicatorCenterY + d - h }, // Top-Right
-        { indicatorCenterX - d + h, indicatorCenterY + d + h }, // Bottom-Right
-        { indicatorCenterX - d - h, indicatorCenterY + d + h }, // Bottom-Left
-        { indicatorCenterX - d - h, indicatorCenterY + d - h }  // Close loop
-    };
-
-    // Calculate the 5 points for the Back Face (offset up and to the right)
-    POINT back[5] = {
-        { indicatorCenterX + d - h, indicatorCenterY - d - h },
-        { indicatorCenterX + d + h, indicatorCenterY - d - h },
-        { indicatorCenterX + d + h, indicatorCenterY - d + h },
-        { indicatorCenterX + d - h, indicatorCenterY - d + h },
-        { indicatorCenterX + d - h, indicatorCenterY - d - h }
-    };
-
-    // Create our multi-colored pens
-    HPEN hFrontPen = CreatePen(PS_SOLID, 1, frontColor);
-    HPEN hBackPen = CreatePen(PS_SOLID, 1, backColor);
-    HPEN hConnPen = CreatePen(PS_SOLID, 1, statusColor);
-
-    // Draw the Back Face first (so it appears behind)
-    oldPen = (HPEN)SelectObject(memDC, hBackPen);
-    Polyline(memDC, back, 5);
-
-    // Draw the Connecting "Network" Lines connecting the vertices
-    SelectObject(memDC, hConnPen);
-    for (int i = 0; i < 4; ++i) {
-      MoveToEx(memDC, back[i].x, back[i].y, nullptr);
-      LineTo(memDC, front[i].x, front[i].y);
-    }
-
-    // Draw the Front Face last (so it renders on top of the connecting lines)
-    SelectObject(memDC, hFrontPen);
-    Polyline(memDC, front, 5);
-
-    // Clean up GDI Objects
-    SelectObject(memDC, oldPen);
-    DeleteObject(hFrontPen);
-    DeleteObject(hBackPen);
-    DeleteObject(hConnPen);
+    DrawHypercubeIndicator(memDC, indicatorCenterX, indicatorCenterY, indicatorRadius, connected);
 
     // 4. Transfer the final image from memory DC to screen DC
     BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
@@ -1082,6 +1044,82 @@ void ChatForm::Hide() const
 bool ChatForm::IsVisible() const
 {
     return m_hWnd && IsWindowVisible(m_hWnd);
+}
+
+COLORREF ChatForm::GetSinusoidalColor(DWORD timeMs, double phaseOffset) const {
+  // Controls the speed of the color cycle. Lower = slower shimmer.
+  const double frequency = 0.003;
+
+  // 2.09439 is roughly 2*PI/3, 4.18879 is 4*PI/3
+  BYTE r = static_cast<BYTE>(sin(frequency * timeMs + phaseOffset) * 127 + 128);
+  BYTE g = static_cast<BYTE>(sin(frequency * timeMs + phaseOffset + 2.09439) * 127 + 128);
+  BYTE b = static_cast<BYTE>(sin(frequency * timeMs + phaseOffset + 4.18879) * 127 + 128);
+
+  return RGB(r, g, b);
+}
+
+void ChatForm::DrawHypercubeIndicator(HDC memDC, int centerX, int centerY, int radius, bool connected) const {
+  COLORREF frontColor, backColor, connColor;
+
+  if (connected) {
+    DWORD timeMs = GetTickCount();
+
+    // Offset the phases slightly so the front, back, and connecting lines
+    // are all at different points in the color spectrum at the same time.
+    frontColor = GetSinusoidalColor(timeMs, 0.0);
+    backColor = GetSinusoidalColor(timeMs, 1.0);
+    connColor = GetSinusoidalColor(timeMs, 2.0);
+  }
+  else {
+    // Dimmed out, static state when disconnected
+    frontColor = RGB(0, 100, 100);
+    backColor = RGB(100, 0, 100);
+    connColor = SoldatoColors::INDICATOR_TIMEOUT;
+  }
+
+  const int h = radius - 2;
+  const int d = 3;
+
+  POINT front[5] = {
+      { centerX - d - h, centerY + d - h },
+      { centerX - d + h, centerY + d - h },
+      { centerX - d + h, centerY + d + h },
+      { centerX - d - h, centerY + d + h },
+      { centerX - d - h, centerY + d - h }
+  };
+
+  POINT back[5] = {
+      { centerX + d - h, centerY - d - h },
+      { centerX + d + h, centerY - d - h },
+      { centerX + d + h, centerY - d + h },
+      { centerX + d - h, centerY - d + h },
+      { centerX + d - h, centerY - d - h }
+  };
+
+  HPEN hFrontPen = CreatePen(PS_SOLID, 1, frontColor);
+  HPEN hBackPen = CreatePen(PS_SOLID, 1, backColor);
+  HPEN hConnPen = CreatePen(PS_SOLID, 1, connColor);
+
+  // 1. Draw back face
+  HPEN oldPen = (HPEN)SelectObject(memDC, hBackPen);
+  Polyline(memDC, back, 5);
+
+  // 2. Draw connecting lines
+  SelectObject(memDC, hConnPen);
+  for (int i = 0; i < 4; ++i) {
+    MoveToEx(memDC, back[i].x, back[i].y, nullptr);
+    LineTo(memDC, front[i].x, front[i].y);
+  }
+
+  // 3. Draw front face
+  SelectObject(memDC, hFrontPen);
+  Polyline(memDC, front, 5);
+
+  // Cleanup
+  SelectObject(memDC, oldPen);
+  DeleteObject(hFrontPen);
+  DeleteObject(hBackPen);
+  DeleteObject(hConnPen);
 }
 
 void ChatForm::AddChatMessage(const std::wstring& sender, const std::wstring& message, const std::string& messageId)
