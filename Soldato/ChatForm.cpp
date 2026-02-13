@@ -1054,18 +1054,22 @@ bool ChatForm::IsVisible() const
   return m_hWnd && IsWindowVisible(m_hWnd);
 }
 
-COLORREF ChatForm::GetSinusoidalColor(DWORD timeMs, float phaseOffset) const {
-  // Controls the speed of the color cycle. Lower = slower shimmer.
-  const float frequency = 0.003f;
+COLORREF ChatForm::GetSinusoidalColor(ULONGLONG timeMs, float phaseOffset) const {
+  // 1. Calculate the continuously growing angle in 64-bit precision 
+  // to survive months of system uptime without precision loss.
+  double scaledTime = 0.003 * static_cast<double>(timeMs);
 
-  // Cast timeMs once to avoid three separate implicit conversions
-  const float t = static_cast<float>(timeMs);
+  // 2. Wrap the angle to a maximum of 2*PI (6.2831853...)
+  // This keeps the value extremely small.
+  double wrappedAngle = fmod(scaledTime, 6.283185307179586);
 
-  // 2.09439f is roughly 2*PI/3, 4.18879f is 4*PI/3
-  // Using sinf() guarantees execution remains in 32-bit float precision
-  BYTE r = static_cast<BYTE>(sinf(frequency * t + phaseOffset) * 127.0f + 128.0f);
-  BYTE g = static_cast<BYTE>(sinf(frequency * t + phaseOffset + 2.09439f) * 127.0f + 128.0f);
-  BYTE b = static_cast<BYTE>(sinf(frequency * t + phaseOffset + 4.18879f) * 127.0f + 128.0f);
+  // 3. NOW it is 100% safe to cast down to a 32-bit float for the hardware math
+  float baseAngle = static_cast<float>(wrappedAngle);
+
+  // 4. Strict FP32 execution pipeline
+  BYTE r = static_cast<BYTE>(sinf(baseAngle + phaseOffset) * 127.0f + 128.0f);
+  BYTE g = static_cast<BYTE>(sinf(baseAngle + phaseOffset + 2.09439f) * 127.0f + 128.0f);
+  BYTE b = static_cast<BYTE>(sinf(baseAngle + phaseOffset + 4.18879f) * 127.0f + 128.0f);
 
   return RGB(r, g, b);
 }
@@ -1074,10 +1078,8 @@ void ChatForm::DrawHypercubeIndicator(HDC memDC, int centerX, int centerY, int r
   COLORREF frontColor, backColor, connColor;
 
   if (connected) {
-    DWORD timeMs = GetTickCount();
+    ULONGLONG timeMs = GetTickCount64();
 
-    // Offset the phases slightly so the front, back, and connecting lines
-    // are all at different points in the color spectrum at the same time.
     frontColor = GetSinusoidalColor(timeMs, 0.0f);
     backColor = GetSinusoidalColor(timeMs, 1.0f);
     connColor = GetSinusoidalColor(timeMs, 2.0f);
