@@ -147,7 +147,7 @@ private:
   void DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& message);
   void DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& message) const;
 
-  COLORREF GetSinusoidalColor(DWORD timeMs, double phaseOffset) const;
+  COLORREF GetSinusoidalColor(DWORD timeMs, float phaseOffset) const;
   void DrawHypercubeIndicator(HDC memDC, int centerX, int centerY, int radius, bool connected) const;
 
 public:

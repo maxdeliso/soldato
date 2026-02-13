@@ -1045,14 +1045,18 @@ bool ChatForm::IsVisible() const
   return m_hWnd && IsWindowVisible(m_hWnd);
 }
 
-COLORREF ChatForm::GetSinusoidalColor(DWORD timeMs, double phaseOffset) const {
+COLORREF ChatForm::GetSinusoidalColor(DWORD timeMs, float phaseOffset) const {
   // Controls the speed of the color cycle. Lower = slower shimmer.
-  const double frequency = 0.003;
+  const float frequency = 0.003f;
 
-  // 2.09439 is roughly 2*PI/3, 4.18879 is 4*PI/3
-  BYTE r = static_cast<BYTE>(sin(frequency * timeMs + phaseOffset) * 127 + 128);
-  BYTE g = static_cast<BYTE>(sin(frequency * timeMs + phaseOffset + 2.09439) * 127 + 128);
-  BYTE b = static_cast<BYTE>(sin(frequency * timeMs + phaseOffset + 4.18879) * 127 + 128);
+  // Cast timeMs once to avoid three separate implicit conversions
+  const float t = static_cast<float>(timeMs);
+
+  // 2.09439f is roughly 2*PI/3, 4.18879f is 4*PI/3
+  // Using sinf() guarantees execution remains in 32-bit float precision
+  BYTE r = static_cast<BYTE>(sinf(frequency * t + phaseOffset) * 127.0f + 128.0f);
+  BYTE g = static_cast<BYTE>(sinf(frequency * t + phaseOffset + 2.09439f) * 127.0f + 128.0f);
+  BYTE b = static_cast<BYTE>(sinf(frequency * t + phaseOffset + 4.18879f) * 127.0f + 128.0f);
 
   return RGB(r, g, b);
 }
@@ -1065,9 +1069,9 @@ void ChatForm::DrawHypercubeIndicator(HDC memDC, int centerX, int centerY, int r
 
     // Offset the phases slightly so the front, back, and connecting lines
     // are all at different points in the color spectrum at the same time.
-    frontColor = GetSinusoidalColor(timeMs, 0.0);
-    backColor = GetSinusoidalColor(timeMs, 1.0);
-    connColor = GetSinusoidalColor(timeMs, 2.0);
+    frontColor = GetSinusoidalColor(timeMs, 0.0f);
+    backColor = GetSinusoidalColor(timeMs, 1.0f);
+    connColor = GetSinusoidalColor(timeMs, 2.0f);
   }
   else {
     // Dimmed out, static state when disconnected
