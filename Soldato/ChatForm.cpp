@@ -581,21 +581,18 @@ LRESULT ChatForm::OnSystemEvent(LPARAM lParam)
 LRESULT ChatForm::OnUpdateAckStatus()
 {
   DEBUG_LOG("ChatForm: WM_APP_UPDATE_ACK received");
-  // Update only pending message acknowledgment statuses for performance
   bool needsRedraw = false;
+
   if (m_networkManager && !m_pendingMessages.empty()) {
-    // Get the MessageTracker from NetworkManager once at the beginning
     auto networkTracker = m_networkManager->GetMessageTracker();
     if (networkTracker) {
-      // Create a copy of pending messages to iterate over (in case we modify the set)
-      std::unordered_set<std::string> pendingCopy = m_pendingMessages;
+      for (auto it = m_pendingMessages.begin(); it != m_pendingMessages.end(); ) {
+        const std::string& messageId = *it;
 
-      for (const std::string& messageId : pendingCopy) {
-        // Find the message in our deque
-        auto msgIt = std::find_if(m_chatMessages.begin(), m_chatMessages.end(),
+        auto msgIt = std::find_if(m_chatMessages.rbegin(), m_chatMessages.rend(),
           [&messageId](const ChatMessage& msg) { return msg.messageId == messageId; });
 
-        if (msgIt != m_chatMessages.end()) {
+        if (msgIt != m_chatMessages.rend()) {
           auto& msg = *msgIt;
           auto ackParties = networkTracker->getAcknowledgingParties(msg.messageId);
           bool hadAck = msg.hasAck;
@@ -604,51 +601,39 @@ LRESULT ChatForm::OnUpdateAckStatus()
           msg.acknowledgingParties = ackParties;
           msg.hasAck = networkTracker->hasAcknowledgment(msg.messageId);
 
-          // Check for timeout with protection against extreme time jumps
           auto now = std::chrono::steady_clock::now();
           auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - msg.timestamp).count();
 
-          // Protect against extreme time jumps (e.g., from sleep/hibernate)
-          // If elapsed time is unreasonably large, treat as timeout but don't spam
           constexpr long long MAX_REASONABLE_ELAPSED = 60 * 60; // 1 hour
           bool isTimedOut = false;
 
           if (elapsed > MAX_REASONABLE_ELAPSED) {
-            // Extreme time jump - likely from sleep/hibernate
-            // Mark as timed out but don't trigger excessive redraws
             isTimedOut = true;
             DEBUG_LOG("ChatForm: Extreme time jump detected (" + std::to_string(elapsed) +
               "s) for message " + msg.messageId + " - treating as timeout");
           }
           else if (elapsed > MessageTracker::MESSAGE_TIMEOUT_SECONDS) {
-            // Normal timeout
             isTimedOut = true;
           }
 
           msg.isTimedOut = (isTimedOut && !msg.hasAck);
 
           if (hadAck != msg.hasAck || wasTimedOut != msg.isTimedOut) {
-            DEBUG_LOG("ChatForm: Message " + msg.messageId + " status changed - hasAck: " +
-              (msg.hasAck ? "true" : "false") + ", isTimedOut: " +
-              (msg.isTimedOut ? "true" : "false"));
             needsRedraw = true;
+          }
 
-            // Remove from pending set if message is acknowledged or timed out
-            if (msg.hasAck || msg.isTimedOut) {
-              m_pendingMessages.erase(msg.messageId);
-              DEBUG_LOG("ChatForm: Removed message " + msg.messageId + " from pending set");
-            }
+          if (msg.hasAck || msg.isTimedOut) {
+            DEBUG_LOG("ChatForm: Removed message " + msg.messageId + " from pending set");
+            it = m_pendingMessages.erase(it);
+            continue;
           }
         }
+
+        ++it;
       }
 
-      // Only invalidate if something actually changed
       if (needsRedraw && m_hChatListBox) {
-        DEBUG_LOG("ChatForm: Invalidating ListBox for redraw");
         InvalidateRect(m_hChatListBox, nullptr, TRUE);
-      }
-      else {
-        DEBUG_LOG("ChatForm: No changes detected, skipping redraw");
       }
     }
   }
@@ -725,7 +710,6 @@ LRESULT ChatForm::OnPaint()
   }
   SelectObject(memDC, oldPen); // Restore old pen
 
-  // 3. Draw connection status indicator to the memory DC (Hypercube/Tesseract)
   const int indicatorRadius = 8;
   const int indicatorPadding = 15;
   const int indicatorCenterX = indicatorPadding;
@@ -1268,8 +1252,7 @@ void ChatForm::SendChatMessage()
   }
 }
 
-
-void ChatForm::FocusMessageInput()
+void ChatForm::FocusMessageInput() const
 {
   if (m_hMessageInput)
   {
@@ -1358,7 +1341,6 @@ void ChatForm::UpdateConnectionUI()
     bool connected = m_networkManager->IsConnected();
     DEBUG_LOG("ChatForm: UpdateConnectionUI called - connected: " + std::string(connected ? "true" : "false"));
 
-
     EnableDisconnectControls(connected);
 
     // Ensure proper button focus when connection state changes
@@ -1374,7 +1356,7 @@ void ChatForm::UpdateConnectionUI()
   }
 }
 
-void ChatForm::EnableDisconnectControls(bool enable)
+void ChatForm::EnableDisconnectControls(bool enable) const
 {
   // Enable/disable menu items based on connection state
   HMENU hMenu = GetMenu(m_hWnd);
@@ -1591,7 +1573,6 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   return (INT_PTR)FALSE;
 }
 
-// Helper function to bring window to foreground using proper Windows pattern
 void ChatForm::BringWindowToForeground(HWND hWnd)
 {
   if (!hWnd) return;
@@ -1644,7 +1625,6 @@ void ChatForm::BringWindowToForeground(HWND hWnd)
   DEBUG_LOG("ChatForm: BringWindowToForeground completed");
 }
 
-// Helper function to resolve proper module handle
 HINSTANCE ChatForm::ResolveModuleHandle(HINSTANCE hInstance)
 {
   // Get the proper module handle - use provided instance or fall back to main executable
@@ -1659,7 +1639,6 @@ HINSTANCE ChatForm::ResolveModuleHandle(HINSTANCE hInstance)
   return hModule;
 }
 
-// Owner-drawn ListBox implementation
 void ChatForm::OnMeasureItem(MEASUREITEMSTRUCT* pMeasureItem)
 {
   if (pMeasureItem->itemID >= 0 && pMeasureItem->itemID < static_cast<int>(m_chatMessages.size())) {
@@ -1868,28 +1847,4 @@ void ChatForm::DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& mes
 
   SetTextColor(hdc, UNPACK_MESSAGE_COLOR(message.packedColors));
   DrawTextW(hdc, message.message.c_str(), -1, &senderRect, DT_WORDBREAK);
-}
-
-void ChatForm::UpdateMessageAckStatus(const std::string& messageId)
-{
-  // Find the message in our deque and update its acknowledgment status
-  for (auto& msg : m_chatMessages) {
-    if (msg.messageId == messageId) {
-      if (m_networkManager) {
-        auto networkTracker = m_networkManager->GetMessageTracker();
-        if (networkTracker) {
-          auto ackParties = networkTracker->getAcknowledgingParties(messageId);
-          msg.acknowledgingParties = ackParties;
-          msg.hasAck = networkTracker->hasAcknowledgment(messageId);
-          msg.hasNack = networkTracker->hasNegativeAcknowledgment(messageId);
-        }
-      }
-      break;
-    }
-  }
-
-  // Invalidate the ListBox to trigger redraw
-  if (m_hChatListBox) {
-    InvalidateRect(m_hChatListBox, nullptr, TRUE);
-  }
 }

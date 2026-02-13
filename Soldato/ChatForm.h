@@ -143,7 +143,6 @@ private:
   // Owner-drawn ListBox handlers
   void OnMeasureItem(MEASUREITEMSTRUCT* pMeasureItem);
   void OnDrawItem(DRAWITEMSTRUCT* pDrawItem);
-  void UpdateMessageAckStatus(const std::string& messageId);
   void DrawMessageBackground(HDC hdc, const RECT& rect, const ChatMessage& message) const;
   void DrawMessageText(HDC hdc, const RECT& rect, const ChatMessage& message);
   void DrawAckIndicator(HDC hdc, const RECT& rect, const ChatMessage& message) const;
@@ -153,7 +152,7 @@ private:
 
 public:
   void UpdateConnectionUI();
-  void EnableDisconnectControls(bool enable);
+  void EnableDisconnectControls(bool enable) const;
   HWND GetConnectDialogHandle() const;
 
 public:
@@ -166,7 +165,7 @@ public:
 
   void AddChatMessage(const std::wstring& sender, const std::wstring& message, const std::string& messageId = "");
   void ClearChat();
-  void FocusMessageInput();
+  void FocusMessageInput() const;
   void UpdatePeerDisplay();
 
   // Pending messages management
