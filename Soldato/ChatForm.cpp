@@ -608,7 +608,7 @@ LRESULT ChatForm::OnUpdateAckStatus()
           bool wasTimedOut = msg.isTimedOut;
 
           msg.acknowledgingParties = ackParties;
-          msg.hasAck = networkTracker->hasAcknowledgment(msg.messageId);
+          msg.hasAck = networkTracker->hasAcknowledgment(messageId);
 
           auto now = std::chrono::steady_clock::now();
           auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - msg.timestamp).count();
